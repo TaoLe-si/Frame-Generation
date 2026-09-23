@@ -1,0 +1,105 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+base {
+    archivesName = 'frame-generation'
+}
+group = 'com.taolesi'
+version = '0.2.2'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+neoForge {
+    // 版本基线照抄 Sodium 1.21.1/stable（已验证组合）
+    version = '21.1.228'
+
+    parchment {
+        minecraftVersion = '1.21.1'
+        mappingsVersion = '2024.11.17'
+    }
+
+    runs {
+        client {
+            client()
+            ideName = 'DLSSMC Client'
+            gameDirectory = project.file('run')
+        }
+    }
+
+    mods {
+        dlssmc {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Sodium / Iris 的 NeoForge 构建只用于编译（配置接入 API），运行期由实际模组提供
+    compileOnly files(
+            'libs/sodium-neoforge-0.8.13-mod.jar',
+            'libs/iris-neoforge-1.8.14-beta.1+mc1.21.1.jar')
+
+    // 单元测试只覆盖纯逻辑（FPS 采样、枚举映射、通道门禁），不触碰 GL / 原生层
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// 把编译好的原生 DLL 打进 jar，运行时由 nativebridge 解包到临时目录加载
+processResources {
+    from('native/build') {
+        include 'dlssmc_native.dll'   // 超分（冻结保留）
+        include 'dlssmc_fg.dll'       // 帧生成（Vulkan / DLSS）
+        include 'dlssmc_dx.dll'       // 帧生成（D3D12 / FSR、XeSS）
+        into 'dlssmc/native'
+    }
+    // 厂商二进制按许可要求随模组再分发，声明文件必须一起进包
+    from('native/vendor/intel/bin') {
+        include 'libxess_fg.dll'
+        include 'libxell.dll'
+        include 'libxess.dll'   // 超分（与 FG 的 libxess_fg.dll 是两个模块）
+        into 'dlssmc/native/vendor/intel/bin'
+    }
+    from('native/vendor/amd/bin') {
+        include 'amd_fidelityfx_loader_dx12.dll'
+        include 'amd_fidelityfx_framegeneration_dx12.dll'
+        include 'amd_fidelityfx_upscaler_dx12.dll'   // 超分 provider
+        into 'dlssmc/native/vendor/amd/bin'
+    }
+    from('native/vendor/intel') {
+        include 'LICENSE.txt'
+        include 'third-party-programs.txt'
+        into 'dlssmc/native/vendor/intel'
+    }
+    from('native/vendor/amd/include') {
+        include 'LICENSE.txt'
+        include 'license.md'
+        into 'dlssmc/native/vendor/amd'
+    }
+}
+
+// 前置模组放进运行目录，方便直接 runClient
+tasks.register('copyPrereqMods', Copy) {
+    from fileTree('libs')
+    // sodium-neoforge-0.8.13-mod.jar 是从外层 jarjar 里解出来的内层包，只为编译用，不能放进 run/mods
+    exclude '**/*-mod.jar'
+    into layout.projectDirectory.dir('run/mods')
+}
+
+tasks.matching { it.name in ['runClient', 'prepareRunClient'] }.configureEach {
+    dependsOn 'copyPrereqMods'
+}

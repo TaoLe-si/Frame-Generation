@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "com.taolesi.dlssmc.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "MixinMinecraft",
+    "MixinGameRenderer",
+    "IrisPipelineAccessor",
+    "MixinLevelRenderer",
+    "MixinWindow"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

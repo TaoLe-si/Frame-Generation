@@ -1,0 +1,45 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+issueTrackerURL = ""
+license = "ARR"
+
+[[mods]]
+modId = "dlssmc"
+version = "0.2.2"
+displayName = "Frame Generation"
+authors = "桃"
+description = '''
+为 Minecraft 接入帧生成：当前后端是 NVIDIA DLSS-G，规划中加入 AMD FSR；另带 DLSS 超分。
+不改动光影管线本身，依赖 Sodium + Iris。
+'''
+
+[[mixins]]
+config = "dlssmc.mixins.json"
+
+[[dependencies.dlssmc]]
+    modId = "neoforge"
+    type = "required"
+    versionRange = "[21.1.228,)"
+    ordering = "NONE"
+    side = "CLIENT"
+
+[[dependencies.dlssmc]]
+    modId = "minecraft"
+    type = "required"
+    versionRange = "[1.21.1,)"
+    ordering = "NONE"
+    side = "CLIENT"
+
+[[dependencies.dlssmc]]
+    modId = "sodium"
+    type = "required"
+    versionRange = "*"
+    ordering = "NONE"
+    side = "CLIENT"
+
+[[dependencies.dlssmc]]
+    modId = "iris"
+    type = "required"
+    versionRange = "*"
+    ordering = "NONE"
+    side = "CLIENT"

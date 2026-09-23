@@ -1,0 +1,46 @@
+# ---- 构建产物 ----
+build/
+.gradle/
+out/
+*.obj
+*.exp
+*.lib
+*.pdb
+
+# 打包出的 jar 由 CI/本地构建产生，不入库
+build/libs/*.jar
+
+# ---- 运行环境 / 依赖 ----
+run/
+logs/
+hs_err_pid*.log
+*.hprof
+
+# 编译期用的前置模组（体积大且是他人发行物，需要时由 tools/fetch_mods.py 拉取）
+libs/
+
+# ---- 原生：产物与第三方 SDK ----
+native/build/
+# 厂商二进制按许可随 mod 再分发，但不进源码仓库（体积 163MB）
+native/vendor/
+# 探针与测试的构建产物
+native/test/build/
+native/test/*.obj
+
+# 上游参考克隆（各自是独立仓库）
+ref/
+
+# SDK / 样例压缩包，超过 GitHub 单文件 100MB 上限
+*.zip
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+
+# ---- 系统 ----
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
