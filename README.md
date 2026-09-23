@@ -48,11 +48,14 @@ bash native/build_dx.sh   # 帧生成（D3D12 / FSR、XeSS）
 ## 依赖
 
 `libs/` 下的光影模组只用于编译（`compileOnly`），不入库；需要时用
-`python tools/fetch_mods.py` 取回。厂商二进制（libxess / FidelityFX）按各自许可
-随构建产物再分发，源码仓库不包含。
+`python tools/fetch_mods.py` 取回。厂商二进制（libxess / FidelityFX / Streamline）
+按各自许可随构建产物再分发，源码仓库不包含；三个 SDK 的取回方式见
+`native/vendor/MANIFEST.sha256` 与 `native/streamline_runtime/MANIFEST.sha256`。
 
 ## 运行前提
 
 - 硬件加速 GPU 调度（Windows 图形设置，HAGS）需开启
-- DLSS 后端需要本机 <a href="https://github.com/NVIDIAGameWorks/Streamline">Streamline</a> 运行时目录，在配置里指定 `streamlinePath`
-- FSR / XeSS 后端不需要额外安装，厂商库随模组打包
+- 三个后端都不需要用户自备 SDK：FSR / XeSS 的厂商库和 DLSS 的
+  <a href="https://github.com/NVIDIAGameWorks/Streamline">Streamline</a> 2.14.1 运行时
+  （含 `nvngx_dlss*.dll` 模型）都随模组打包，首次使用时解包到游戏目录下的缓存目录
+- 想改用别的 Streamline 版本时才需要在配置里指定 `streamlinePath`；留空即用内置的那份

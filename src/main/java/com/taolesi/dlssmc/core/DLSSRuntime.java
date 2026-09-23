@@ -5,6 +5,7 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.taolesi.dlssmc.config.DLSSConfig;
+import com.taolesi.dlssmc.nativebridge.DLSSFGNative;
 import com.taolesi.dlssmc.nativebridge.DLSSNative;
 import com.taolesi.dlssmc.render.DepthMotionPass;
 import net.minecraft.client.Minecraft;
@@ -91,9 +92,15 @@ public final class DLSSRuntime {
         if (System.currentTimeMillis() < nextNativeRetryAt) return false;
         initAttempted = true;
 
-        String slPath = DLSSConfig.STREAMLINE_PATH.get();
         try {
-            Path slDir = Path.of(slPath);
+            // 配置里没写（或写错了）就用随包自带的 Streamline 运行时
+            Path slDir = DLSSFGNative.resolveStreamlineDir(
+                    DLSSConfig.STREAMLINE_PATH.get(), nativeCacheDir);
+            if (slDir == null) {
+                status = "Streamline 运行时不可用：配置未指定且随包自带的那份解包失败";
+                return false;
+            }
+            String slPath = slDir.toAbsolutePath().toString();
             if (!DLSSNative.load(slDir, nativeCacheDir)) {
                 status = "加载原生库失败: " + DLSSNative.getLastError();
                 return false;

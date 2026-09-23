@@ -11,6 +11,17 @@ import java.nio.file.Path;
 public final class DLSSFGNative {
 
     public static final String NATIVE_RESOURCE = "/dlssmc/native/dlssmc_fg.dll";
+    public static final String RUNTIME_DIR = "streamline_runtime";
+
+    /** 随 mod 打包的 Streamline 运行时，用户没指定 streamlinePath 时用这一份 */
+    private static final String[] RUNTIME_DLLS = {
+            "sl.interposer.dll", "sl.common.dll", "sl.dlss.dll",
+            "sl.dlss_g.dll", "sl.reflex.dll", "sl.pcl.dll",
+            // Reflex 在 Vulkan 上的低延迟实现，DLSS-G 要求 Reflex 在跑
+            "NvLowLatencyVk.dll",
+            // NGX 模型本体。Streamline 的插件目录里没有它们时 DLSS-G/DLSS 会直接报不支持，
+            // 不能指望驱动里的那份（DriverStore 路径随驱动版本变）。
+            "nvngx_dlss.dll", "nvngx_dlssg.dll"};
 
     private static boolean loaded = false;
     private static Throwable lastError = null;
@@ -25,12 +36,54 @@ public final class DLSSFGNative {
         return lastError;
     }
 
+    /**
+     * 把打包进来的 Streamline 运行时解包到 {@code nativeCacheDir/streamline_runtime}。
+     * 配置里 streamlinePath 留空时走这里，用户不必自己准备 SDK。
+     *
+     * @return 解包出的目录；资源缺失时返回 null（调用方回落到用户配置的路径）
+     */
+    public static Path ensureBundledRuntime(Path nativeCacheDir) {
+        try {
+            Path dir = nativeCacheDir.resolve(RUNTIME_DIR);
+            Files.createDirectories(dir);
+            for (String name : RUNTIME_DLLS) {
+                Path out = dir.resolve(name);
+                // 已解包且非空就跳过：换世界/换后端会重复调，不必每次重写 3MB
+                if (Files.isRegularFile(out) && Files.size(out) > 0) continue;
+                try (var in = DLSSFGNative.class.getResourceAsStream(
+                        "/dlssmc/native/" + RUNTIME_DIR + "/" + name)) {
+                    if (in == null) return null;
+                    Files.copy(in, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            return dir;
+        } catch (Throwable t) {
+            lastError = t;
+            return null;
+        }
+    }
+
+    /**
+     * 决定用哪个 Streamline 运行时目录：配置里给的就用配置的，没给（或给的目录里没有
+     * sl.interposer.dll）就用随包解出来的那份。
+     *
+     * @return 可用目录；连自带的那份都解不出来时返回 null
+     */
+    public static Path resolveStreamlineDir(String configured, Path nativeCacheDir) {
+        if (configured != null && !configured.isBlank()) {
+            Path dir = Path.of(configured);
+            if (Files.isRegularFile(dir.resolve("sl.interposer.dll"))) return dir;
+        }
+        return ensureBundledRuntime(nativeCacheDir);
+    }
+
     public static synchronized boolean load(Path streamlineBinDir, Path nativeCacheDir) {
         if (loaded) return true;
         try {
             Path interposer = streamlineBinDir.resolve("sl.interposer.dll");
             if (!Files.isRegularFile(interposer)) {
-                throw new IllegalStateException("找不到 " + interposer);
+                throw new IllegalStateException("找不到 " + interposer
+                        + "（Streamline 运行时目录配置有误，且随包自带的那份没解出来）");
             }
             Files.createDirectories(nativeCacheDir);
             Path dll = nativeCacheDir.resolve("dlssmc_fg.dll");

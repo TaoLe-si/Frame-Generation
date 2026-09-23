@@ -16,8 +16,8 @@ public final class VendorVersions {
     public static final String XELL = "1.3.2";
     public static final String FSR_SDK = "2.3.0";
     public static final String XESS_SDK = "3.0.2";
-    /** DLSS 不内置：Streamline 由配置里的 streamlinePath 指向本机目录 */
-    public static final String DLSS = "Streamline 2.14.1（外部目录）";
+    /** DLSS 内置：随包带一份 Streamline 2.14.1 运行时（含 nvngx 模型），配置里没指定 streamlinePath 时用它 */
+    public static final String DLSS = "Streamline 2.14.1（内置，可用 streamlinePath 覆盖）";
 
     private VendorVersions() {}
 }

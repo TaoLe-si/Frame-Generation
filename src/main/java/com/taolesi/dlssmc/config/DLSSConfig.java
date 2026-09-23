@@ -282,8 +282,10 @@ public final class DLSSConfig {
             .defineInRange("statusLogInterval", 120, 0, 36000);
 
     public static final ModConfigSpec.ConfigValue<String> STREAMLINE_PATH = BUILDER
-            .comment("Streamline 运行时 DLL 所在目录（含 sl.interposer.dll、sl.dlss.dll、nvngx_dlss.dll）。")
-            .define("streamlinePath", "D:\\Backup\\Downloads\\streamline-sdk-v2.14.1\\bin\\x64");
+            .comment("Streamline 运行时 DLL 所在目录（含 sl.interposer.dll、nvngx_dlss.dll、nvngx_dlssg.dll）。",
+                     "留空则使用随 mod 打包的 Streamline 2.14.1 运行时，正常游玩不需要填。",
+                     "只有想换用别的 SDK 版本时才指定：填了但这个目录里没有 sl.interposer.dll 时仍会回落到自带的那份。")
+            .define("streamlinePath", "");
 
     public static final ModConfigSpec.ConfigValue<String> LOG_PATH = BUILDER
             .comment("Streamline 日志目录，留空则不写日志。")

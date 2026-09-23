@@ -33,7 +33,8 @@ public final class DLSSNative {
         try {
             Path interposer = streamlineBinDir.resolve(INTERPOSER_NAME);
             if (!Files.isRegularFile(interposer)) {
-                throw new IllegalStateException("找不到 " + interposer + "（Streamline 运行时目录配置有误）");
+                throw new IllegalStateException("找不到 " + interposer
+                        + "（Streamline 运行时目录配置有误，且随包自带的那份没解出来）");
             }
 
             Path dll = extractNative(nativeCacheDir);

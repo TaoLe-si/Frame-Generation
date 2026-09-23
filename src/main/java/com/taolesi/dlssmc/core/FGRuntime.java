@@ -273,7 +273,7 @@ public final class FGRuntime {
         return mfgUnlockReport = DLSSFGNative.nativeGetMfgUnlockReport();
     }
 
-    /** 构建期内置进 jar 的版本；DLSS 不内置，所以显示的是本机 Streamline 目录 */
+    /** 构建期内置进 jar 的版本；DLSS 内置一份 Streamline，也可用 streamlinePath 覆盖 */
     public static String builtinVersion(DLSSConfig.Backend b) {
         return switch (b) {
             case DLSS -> VendorVersions.DLSS;
@@ -353,8 +353,14 @@ public final class FGRuntime {
         String logPath = logDir.isEmpty() ? cacheDir.toString() : logDir;
         try {
             if (backend == DLSSConfig.Backend.DLSS) {
-                String slPath = DLSSConfig.STREAMLINE_PATH.get();
-                Path slDir = Path.of(slPath);
+                // 配置里没写（或写错了）就用随包自带的 Streamline 运行时
+                Path slDir = DLSSFGNative.resolveStreamlineDir(
+                        DLSSConfig.STREAMLINE_PATH.get(), cacheDir);
+                if (slDir == null) {
+                    status = "Streamline 运行时不可用：配置未指定且随包自带的那份解包失败";
+                    return false;
+                }
+                String slPath = slDir.toAbsolutePath().toString();
                 if (!DLSSFGNative.load(slDir, cacheDir)) {
                     status = "加载原生库失败: " + DLSSFGNative.getLastError();
                     return false;

@@ -23,6 +23,10 @@ libs/
 native/build/
 # 厂商二进制按许可随 mod 再分发，但不进源码仓库（体积 163MB）
 native/vendor/
+# NVIDIA Streamline 运行时（sl.* + nvngx 模型），同样随 mod 再分发但不入库（67MB）。
+# 缺这份，从源码仓库编出来的 jar 就没有 DLSS 后端；需要时从 Streamline SDK 的
+# bin/x64 取回同样几个文件，清单见 native/streamline_runtime/MANIFEST.sha256。
+native/streamline_runtime/*.dll
 # 探针与测试的构建产物
 native/test/build/
 native/test/*.obj
