@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "com.taolesi.dlssmc.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "refmap": "dlssmc.refmap.json",
+  "client": [
+    "MixinMinecraft",
+    "MixinGameRenderer",
+    "IrisPipelineAccessor",
+    "MixinLevelRenderer",
+    "MixinWindow"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

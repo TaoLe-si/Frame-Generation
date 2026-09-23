@@ -1,0 +1,58 @@
+# ---- 构建产物 ----
+build/
+.gradle/
+out/
+*.obj
+*.exp
+*.lib
+*.pdb
+
+# 打包出的 jar 由 CI/本地构建产生，不入库
+build/libs/*.jar
+
+# ---- 运行环境 / 依赖 ----
+run/
+# 探测用的干净实例（只放 Embeddium / Oculus / dlssmc），整包跑不起来时用它分辨是谁的错
+run-probe/
+logs/
+hs_err_pid*.log
+*.hprof
+
+# 编译期用的前置模组（体积大且是他人发行物，需要时由 tools/fetch_mods.py 拉取）
+libs/
+
+# ---- 原生：产物与第三方 SDK ----
+native/build/
+# 厂商二进制按许可随 mod 再分发，但不进源码仓库（体积 163MB）
+native/vendor/
+# NVIDIA Streamline 运行时（sl.* + nvngx 模型），同样随 mod 再分发但不入库（67MB）。
+# 缺这份，从源码仓库编出来的 jar 就没有 DLSS 后端；需要时从 Streamline SDK 的
+# bin/x64 取回同样几个文件，清单见 native/streamline_runtime/MANIFEST.sha256。
+native/streamline_runtime/*.dll
+# 探针与测试的构建产物
+native/test/build/
+native/test/*.obj
+
+# 上游参考克隆与 SDK 压缩包已上移到工作区共享目录 ../DLSS-refs/，本仓不再涉及
+*.zip
+
+# ---- 工具脚本 ----
+# tools/ 与 native/test/ 下的 Python 辅助脚本会留下字节码缓存
+__pycache__/
+*.pyc
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+
+# ---- 工作区级（ZCode 工具与本仓无关）----
+.zcodeignore
+.workbuddy/
+
+# ---- 系统 ----
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

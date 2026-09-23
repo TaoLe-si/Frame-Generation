@@ -1,0 +1,135 @@
+plugins {
+    id 'java-library'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.38'
+}
+
+base {
+    archivesName = 'frame-generation'
+}
+group = 'com.taolesi'
+version = '0.2.2'
+
+// 1.20.1 / Forge 47 是 Java 17 世代
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+minecraft {
+    // 1.20.1 的官方映射从 Forge 47.1.x 起就带参数名
+    mappings channel: 'official', version: '1.20.1'
+
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            mods {
+                dlssmc {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+// 1.20.1 Forge 运行期是 SRG 名，mixin 注入 MC 方法必须靠 refmap 翻译，
+// 否则 @Inject 的 method = "runTick" 在实机上找不到（开发环境却是好的）。
+mixin {
+    add sourceSets.main, 'dlssmc.refmap.json'
+    config 'dlssmc.mixins.json'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:1.20.1-47.4.16"
+
+    // Embeddium / Oculus 的 Forge 构建只用于编译（配置接入 API），运行期由实际模组提供。
+    // 1.20.1 这条线上没有 Sodium / Iris，对应物是 Embeddium（Sodium 分支）与 Oculus（Iris 分支）。
+    compileOnly files(
+            'libs/embeddium-0.3.31+mc1.20.1.jar',
+            'libs/oculus-mc1.20.1-1.8.0.jar')
+
+    // Forge 47 运行期自带 mixin 0.8.5，编译期要显式引
+    compileOnly 'org.spongepowered:mixin:0.8.5'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+    // 单元测试只覆盖纯逻辑（FPS 采样、枚举映射、通道门禁），不触碰 GL / 原生层
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// 把编译好的原生 DLL 打进 jar，运行时由 nativebridge 解包到临时目录加载
+processResources {
+    from('native/build') {
+        include 'dlssmc_native.dll'   // 超分（冻结保留）
+        include 'dlssmc_fg.dll'       // 帧生成（Vulkan / DLSS）
+        include 'dlssmc_dx.dll'       // 帧生成（D3D12 / FSR、XeSS）
+        into 'dlssmc/native'
+    }
+    // Streamline 运行时（DLSS 后端依赖）。NVIDIA MIT-style 许可，可随 mod 再分发，
+    // 用户没在配置里指定 streamlinePath 时由 mod 自带这一份。
+    // 必须连 nvngx_*.dll 一起带：Streamline 只从插件目录找 NGX 模型本体，
+    // 只给 sl.*.dll 的话 DLSS-G/DLSS 会直接报「不支持」。
+    from('native/streamline_runtime') {
+        include 'sl.*.dll'
+        include 'NvLowLatencyVk.dll'   // Reflex 的 Vulkan 低延迟实现
+        include 'nvngx_dlss.dll'
+        include 'nvngx_dlssg.dll'
+        include '*-LICENSE.txt'
+        into 'dlssmc/native/streamline_runtime'
+    }
+    // 厂商二进制按许可要求随模组再分发，声明文件必须一起进包
+    from('native/vendor/intel/bin') {
+        include 'libxess_fg.dll'
+        include 'libxell.dll'
+        include 'libxess.dll'   // 超分（与 FG 的 libxess_fg.dll 是两个模块）
+        into 'dlssmc/native/vendor/intel/bin'
+    }
+    from('native/vendor/amd/bin') {
+        include 'amd_fidelityfx_loader_dx12.dll'
+        include 'amd_fidelityfx_framegeneration_dx12.dll'
+        include 'amd_fidelityfx_upscaler_dx12.dll'   // 超分 provider
+        into 'dlssmc/native/vendor/amd/bin'
+    }
+    from('native/vendor/intel') {
+        include 'LICENSE.txt'
+        include 'third-party-programs.txt'
+        into 'dlssmc/native/vendor/intel'
+    }
+    from('native/vendor/amd/include') {
+        include 'LICENSE.txt'
+        include 'license.md'
+        into 'dlssmc/native/vendor/amd'
+    }
+}
+
+// 前置模组放进运行目录，方便直接 runClient
+tasks.register('copyPrereqMods', Copy) {
+    from fileTree('libs')
+    into layout.projectDirectory.dir('run/mods')
+}
+
+tasks.matching { it.name in ['runClient', 'prepareRunClient'] }.configureEach {
+    dependsOn 'copyPrereqMods'
+}
+
+// Forge 的 jar 必须过一遍重混淆，否则实机加载不到（FG6 只把 reobfJar 挂在 assemble 上）
+tasks.named('jar', Jar).configure {
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
