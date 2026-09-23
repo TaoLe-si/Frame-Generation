@@ -5,20 +5,23 @@ export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
 # Git Bash 会把 /nologo、/link 这类参数当成 POSIX 路径转换掉（cl 收到 D:\Git\nologo），必须豁免
 export MSYS2_ARG_CONV_EXCL='*'
 export MSYS_NO_PATHCONV=1
+# 自定位：脚本跟着仓库走，别写死工作区绝对路径
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REFS="$(cd "$SELF_DIR/../.." && pwd)/DLSS-refs"
 
 MSVC='C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231'
 SDK='C:\Program Files (x86)\Windows Kits\10'
 SDKVER='10.0.26100.0'
-VK='E:\DLSS for Minecraft\ref\vkheaders\include'
+VK="$(cygpath -w "$REFS/vkheaders/include")"
 SL='D:\Backup\Downloads\streamline-sdk-v2.14.1'
 JDK='D:\Java21'
-ROOT='E:\DLSS for Minecraft\native'
+ROOT="$(cygpath -w "$(cd "$SELF_DIR/.." && pwd)/native")"
 OUT="$ROOT\\build"
 
 CL="$MSVC\\bin\\Hostx64\\x64\\cl.exe"
 export PATH="/c/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64:$PATH"
 
-mkdir -p '/e/DLSS for Minecraft/native/build'
+mkdir -p "$SELF_DIR/../build"
 
 SOURCE="$ROOT\\src\\dlssmc_fg.cpp"
 TARGET="$OUT\\dlssmc_fg.dll"

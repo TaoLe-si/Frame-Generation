@@ -1,8 +1,14 @@
+import pathlib
+
+# 自定位：脚本跟着仓库走，别写死工作区绝对路径
+FORK = pathlib.Path(__file__).resolve().parents[1]
+REFS = FORK.parent / "DLSS-refs"
+
 import json, os, sys
 from urllib.parse import quote
 from urllib.request import urlopen, Request
 
-OUT = r"E:\DLSS for Minecraft\libs"
+OUT = str(FORK / "libs")
 os.makedirs(OUT, exist_ok=True)
 UA = {"User-Agent": "dlssmc-dev/0.1 (local build script)"}
 

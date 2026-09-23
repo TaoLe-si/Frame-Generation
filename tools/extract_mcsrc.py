@@ -1,7 +1,13 @@
+import pathlib
+
+# 自定位：脚本跟着仓库走，别写死工作区绝对路径
+FORK = pathlib.Path(__file__).resolve().parents[1]
+REFS = FORK.parent / "DLSS-refs"
+
 import zipfile, os, sys
 
-jar = r"E:\DLSS for Minecraft\build\moddev\artifacts\neoforge-21.1.228-sources.jar"
-out = r"E:\DLSS for Minecraft\ref\mcsrc"
+jar = str(FORK / "build/moddev/artifacts/neoforge-21.1.228-sources.jar")
+out = str(REFS / "mcsrc")
 wanted = sys.argv[1:] if len(sys.argv) > 1 else None
 
 os.makedirs(out, exist_ok=True)

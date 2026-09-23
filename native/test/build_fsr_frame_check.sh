@@ -1,4 +1,7 @@
-#!/usr/bin/env bash
+
+# 自定位：脚本跟着仓库走，别写死工作区绝对路径
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REFS="$(cd "$SELF_DIR/../.." && pwd)/DLSS-refs"#!/usr/bin/env bash
 # Standalone DLL + test cache only; no game DLL or deployment output is touched.
 # Optional arguments: absolute production source snapshot, then selected test modes.
 set -euo pipefail
@@ -6,7 +9,7 @@ export MSYS2_ARG_CONV_EXCL='*' MSYS_NO_PATHCONV=1
 MSVC='C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231'
 SDK='C:/Program Files (x86)/Windows Kits/10'
 SDKVER='10.0.26100.0'
-ROOT='E:/DLSS for Minecraft/native'
+ROOT="$(cygpath -w "$(cd "$SELF_DIR/.." && pwd)/native")"
 OUT="$ROOT/test/build/fsr-frame-check"
 SOURCE="${1:-$ROOT/src/dlssmc_dx.cpp}"
 export PATH="$MSVC/bin/Hostx64/x64:$PATH"

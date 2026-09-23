@@ -3,6 +3,9 @@ set -e
 export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
 export MSYS2_ARG_CONV_EXCL='*'
 export MSYS_NO_PATHCONV=1
+# 自定位：脚本跟着仓库走，别写死工作区绝对路径
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REFS="$(cd "$SELF_DIR/../.." && pwd)/DLSS-refs"
 
 MSVC='C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231'
 SDK='C:\Program Files (x86)\Windows Kits\10'
@@ -10,11 +13,11 @@ SDKVER='10.0.26100.0'
 JDK='D:\Java21'
 SL_SDK='D:\Backup\Downloads\streamline-sdk-v2.14.1'
 VK_SDK='D:\AndroidSdk\ndk\26.1.10909125\sources\third_party\vulkan\src\include\vulkan'
-ROOT='E:\DLSS for Minecraft\native'
+ROOT="$(cygpath -w "$(cd "$SELF_DIR/.." && pwd)/native")"
 OUT="$ROOT\build"
 
 export PATH="/c/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64:$PATH"
-mkdir -p '/e/DLSS for Minecraft/native/build'
+mkdir -p "$SELF_DIR/../build"
 
 INCLUDES=(
   "/I$MSVC/include"
