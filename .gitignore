@@ -34,11 +34,16 @@ native/test/*.obj
 # 上游参考克隆与 SDK 压缩包已上移到工作区共享目录 ../DLSS-refs/，本仓不再涉及
 *.zip
 
+# ---- 工具脚本 ----
+# tools/ 与 native/test/ 下的 Python 辅助脚本会留下字节码缓存
+__pycache__/
+*.pyc
+
 # ---- IDE ----
 .idea/
 *.iml
 .vscode/
-.swp
+*.swp
 *~
 
 # ---- 工作区级（ZCode 工具与本仓无关）----
