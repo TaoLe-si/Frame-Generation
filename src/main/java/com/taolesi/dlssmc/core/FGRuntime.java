@@ -101,6 +101,7 @@ public final class FGRuntime {
     private long presentedFrames = 0;
     private final FpsSampler fps = new FpsSampler();
     private int tunedFlags = -1;
+    private int tunedFps = -1;
     private double[] latency;
     private double[] bridge;
     private long latencyTick;
@@ -826,15 +827,19 @@ public final class FGRuntime {
                 }
             }
             if (!usesDx()) {
+                // 低 5 位是布尔开关，往上是工作模式；目标帧率单独比，因为它可以有 0..1000
                 int tuning = (DLSSConfig.FG_SHOW_ONLY_INTERPOLATED.get() ? 1 : 0)
                         | (DLSSConfig.FG_RETAIN_RESOURCES.get() ? 2 : 0)
                         | (DLSSConfig.FG_MENU_DETECTION.get() ? 4 : 0)
                         | (DLSSConfig.FG_QUEUE_PARALLELISM.get() ? 8 : 0)
-                        | (DLSSConfig.FG_UI_RECOMPOSITION.get() ? 16 : 0);
-                if (tuning != tunedFlags) {
+                        | (DLSSConfig.FG_UI_RECOMPOSITION.get() ? 16 : 0)
+                        | (DLSSConfig.DLSSG_MODE.get().slValue << 5);
+                int targetFps = DLSSConfig.DLSSG_DYNAMIC_FPS.get();
+                if (tuning != tunedFlags || targetFps != tunedFps) {
                     DLSSFGNative.nativeSetTuning((tuning & 1) != 0, (tuning & 2) != 0, (tuning & 4) != 0,
-                            (tuning & 8) != 0, (tuning & 16) != 0);
+                            (tuning & 8) != 0, (tuning & 16) != 0, (tuning >> 5) & 3, (float) targetFps);
                     tunedFlags = tuning;
+                    tunedFps = targetFps;
                 }
                 if ((latencyTick++ & 15) == 0) {
                     latency = DLSSFGNative.nativeGetLatency();
@@ -1143,6 +1148,7 @@ public final class FGRuntime {
         fps.reset();
         latency = null;
         tunedFlags = -1;
+        tunedFps = -1;
         fsrTuningPushed = -1;
         xessThresholdPushed = -1f;
         xellFpsPushed = -1;

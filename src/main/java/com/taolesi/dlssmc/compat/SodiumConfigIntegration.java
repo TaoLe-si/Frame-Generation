@@ -72,6 +72,13 @@ public final class SodiumConfigIntegration {
     private static OptionPage dlssPage() {
         OptionGroup generation = group("dlss_generation", "常规")
                 .add(frameGeneration())
+                .add(enumOption("dlssg_mode", "工作模式",
+                        "固定倍数：一直按档位插满，档位越高越顺但真实帧率被摊薄、输入延迟同步变高。"
+                                + "动态：按目标帧率只插够用的张数，真实帧率掉下来时自动少插几张把延迟压住，"
+                                + "有余量时才用满档位 —— 觉得多帧延迟高就先切这个。"
+                                + "动态需要驱动支持动态多帧，不支持时会退回固定倍数并在日志里说明。",
+                        DLSSConfig.DLSSG_MODE, DLSSConfig.DlssgMode.class, null))
+                .add(dlssgDynamicFps())
                 .add(bool("dlssg_unlock_mfg", "解锁多帧生成（3x/4x）",
                         "官方把多帧生成限在 RTX 50，真正卡住它的是一处 GPU 架构门禁："
                                 + "低于该架构的显卡只报上限 1（即 2x），3x/4x 请求会被 NGX 顶回。"
@@ -354,6 +361,14 @@ public final class SodiumConfigIntegration {
         } catch (ReflectiveOperationException e) {
             return enumConstant.toString();
         }
+    }
+
+    private static OptionImpl<Void, Integer> dlssgDynamicFps() {
+        return integer("dlssg_dynamic_fps", "动态模式目标帧率",
+                "动态模式希望达到的每秒帧数（插帧后）。0 表示由 DLSS-G 自动取显示器刷新率。"
+                        + "调低会在真实帧率不足时插得更少、延迟更低；只在动态模式下生效。",
+                DLSSConfig.DLSSG_DYNAMIC_FPS, 0, 1000, 5,
+                v -> Component.literal(v == 0 ? "跟显示器刷新率" : v + " FPS"));
     }
 
     private static OptionImpl<Void, Integer> reflexFpsLimit() {

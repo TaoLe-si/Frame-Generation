@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# 编译 FSR 帧生成能力探针（cl.exe 直编；运行时 LoadLibrary loader，不链接 import lib）
+# 编译 XeSS-FG / XeLL 能力探针（cl.exe 直编；不链接厂商 import lib，运行时按路径 LoadLibrary）
 set -e
 # 自定位：脚本跟着仓库走，别写死工作区绝对路径
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REFS="$(cd "$SELF_DIR/../.." && pwd)/DLSS-refs"
 export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
+# Git Bash 会把 /nologo、/link 这类参数当成 POSIX 路径转换掉，必须豁免
+export MSYS2_ARG_CONV_EXCL='*'
+export MSYS_NO_PATHCONV=1
 
 MSVC='C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231'
 SDK='C:\Program Files (x86)\Windows Kits\10'
@@ -21,13 +24,13 @@ cl.exe /nologo /utf-8 /std:c++17 /O2 /MD /EHsc /DUNICODE /D_UNICODE \
   /I"$SDK\\Include\\$SDKVER\\um" \
   /I"$SDK\\Include\\$SDKVER\\shared" \
   /I"$SDK\\Include\\$SDKVER\\winrt" \
-  /I"$ROOT\\vendor\\amd\\include" \
+  /I"$ROOT\\vendor\\intel" \
   /Fo"$OUT\\\\" \
-  "$ROOT\\test\\fsr_probe.cpp" \
-  /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$OUT\\fsr_probe.exe" \
+  "$ROOT\\test\\xess_mfg_probe.cpp" \
+  /link /SUBSYSTEM:CONSOLE /MACHINE:X64 /OUT:"$OUT\\xess_mfg_probe.exe" \
   /LIBPATH:"$MSVC\\lib\\x64" \
   /LIBPATH:"$SDK\\Lib\\$SDKVER\\ucrt\\x64" \
   /LIBPATH:"$SDK\\Lib\\$SDKVER\\um\\x64" \
-  d3d12.lib dxgi.lib user32.lib gdi32.lib version.lib
+  d3d12.lib dxgi.lib user32.lib gdi32.lib
 
-echo "BUILD DONE -> $OUT\\fsr_probe.exe"
+echo "BUILD DONE -> $OUT\\xess_mfg_probe.exe"

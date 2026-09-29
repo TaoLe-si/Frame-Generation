@@ -9,7 +9,7 @@ export PATH="/usr/bin:/bin:/usr/local/bin:$PATH"
 MSVC='C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231'
 SDK='C:\Program Files (x86)\Windows Kits\10'
 SDKVER='10.0.26100.0'
-ROOT="$(cygpath -w "$(cd "$SELF_DIR/.." && pwd)/native")"
+ROOT="$(cygpath -w "$SELF_DIR/..")"
 OUT="$ROOT\\test\\build"
 
 export PATH="/c/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64:$PATH"
