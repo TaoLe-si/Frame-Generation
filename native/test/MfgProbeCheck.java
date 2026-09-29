@@ -60,6 +60,10 @@ public class MfgProbeCheck {
         GLFW.glfwWindowHint(GLFW.GLFW_CONTEXT_VERSION_MINOR, 5);
         long window = GLFW.glfwCreateWindow(width, height, "mfg probe", 0, 0);
         check(window != 0, "GL 窗口");
+        // 光 VISIBLE 不够：窗口在后台时合成器不认，DLSS-G 会当成没上屏，
+        // numFramesActuallyPresented 恒为 1，会读成「多帧被拒」这种假结论。
+        GLFW.glfwShowWindow(window);
+        GLFW.glfwFocusWindow(window);
         GLFW.glfwMakeContextCurrent(window);
         GL.createCapabilities();
         GLFW.glfwSwapInterval(0);
@@ -101,6 +105,12 @@ public class MfgProbeCheck {
             else break;
         }
         System.out.println("生产路径上限 CEILING " + ceiling + "x");
+        // 一帧都没插出来时别说成「多帧被拒」：先分清楚是被拒还是窗口没被合成器认。
+        // 窗口不在前台时 numFramesActuallyPresented 恒为 1，读数会误导成上限很低。
+        if (ceiling == 0) {
+            System.out.println("  [!!] 全程没观察到多帧。若窗口不在前台，读数恒为 1 并不代表上限低，"
+                    + "请把探针窗口点到前台后重跑再判断。");
+        }
 
         DLSSFGNative.nativeSetEnabled(0);
         System.out.println("PROBE DONE");

@@ -215,6 +215,16 @@ struct FgContext {
     bool fgMenuDetection = true;
     bool fgQueueParallelism = true;
     bool fgUiRecomposition = false;
+    // DLSS-G 工作模式：0 固定倍数 / 1 自动 / 2 动态（按目标帧率只生成够用的帧数）。
+    // 固定倍数会把真实帧率摊薄成 呈现帧率/(N+1)，真实帧率越低输入延迟越高；
+    // 动态模式下 DLSS-G 自己按目标帧率决定这帧生成几张，帧率掉下来时自动少生成。
+    int fgMode = 0;
+    float fgDynamicTargetFps = 0.0f;
+    // 驱动是否支持动态多帧（DLSSGState::bIsDynamicMFGSupported），上一帧的 state 里带回来
+    bool dynamicMfgSupported = false;
+    bool dynamicUnsupportedLogged = false;
+    bool modeLogged = false;
+    bool stateLogged = false;
 
     // Reflex 回报的实测延迟分段（毫秒）
     bool latValid = false;
@@ -1826,8 +1836,24 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativePresent(JNIEnv* env, jcl
 
     // ---- DLSS-G 选项 ----
     sl::DLSSGOptions opt{};
-    opt.mode = sl::DLSSGMode::eOn;
+    // 动态模式要驱动支持；不支持就退回固定倍数，不能让整条 FG 起不来。
+    // 判据是上一帧 state 里的 bIsDynamicMFGSupported（本帧的 state 在 present 之后才取）。
+    sl::DLSSGMode wantMode = sl::DLSSGMode::eOn;
+    if (g_ctx.fgMode == 1) {
+        wantMode = sl::DLSSGMode::eAuto;
+    } else if (g_ctx.fgMode == 2) {
+        if (g_ctx.dynamicMfgSupported) {
+            wantMode = sl::DLSSGMode::eDynamic;
+        } else if (!g_ctx.dynamicUnsupportedLogged) {
+            g_ctx.dynamicUnsupportedLogged = true;
+            logf("[dlssmc] 驱动不支持动态多帧（bIsDynamicMFGSupported=false），本次退回固定倍数\n");
+        }
+    }
+    opt.mode = wantMode;
     opt.numFramesToGenerate = g_ctx.framesToGenerate;
+    // 动态模式下这是「上限」：目标帧率已经够用时 DLSS-G 会少生成几张。
+    // 0 = 让它自己取显示器刷新率。
+    opt.dynamicTargetFrameRate = g_ctx.fgDynamicTargetFps;
     opt.numBackBuffers = (uint32_t)g_ctx.swapImages.size();
     opt.mvecDepthWidth = g_ctx.depthTex.width;
     opt.mvecDepthHeight = g_ctx.depthTex.height;
@@ -1864,7 +1890,8 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativePresent(JNIEnv* env, jcl
             && opt.mvecBufferFormat == sent.mvecBufferFormat
             && opt.depthBufferFormat == sent.depthBufferFormat
             && opt.hudLessBufferFormat == sent.hudLessBufferFormat
-            && opt.uiBufferFormat == sent.uiBufferFormat;
+            && opt.uiBufferFormat == sent.uiBufferFormat
+            && opt.dynamicTargetFrameRate == sent.dynamicTargetFrameRate;
     if (unchanged) {
         g_ctx.dlssGOn = true;
     } else {
@@ -1872,8 +1899,9 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativePresent(JNIEnv* env, jcl
         if (r != sl::Result::eOk) {
             logf("[dlssmc] slDLSSGSetOptions -> %d\n", (int)r);
         } else {
-            logf("[dlssmc] slDLSSGSetOptions 下发: frames=%u flags=0x%x queue=%d ui=%d %ux%u buffers=%u\n",
-                 opt.numFramesToGenerate, (uint32_t)opt.flags, (int)opt.queueParallelismMode,
+            logf("[dlssmc] slDLSSGSetOptions 下发: mode=%d frames=%u 目标帧率=%.1f flags=0x%x queue=%d ui=%d %ux%u buffers=%u\n",
+                 (int)opt.mode, opt.numFramesToGenerate, opt.dynamicTargetFrameRate,
+                 (uint32_t)opt.flags, (int)opt.queueParallelismMode,
                  (int)opt.enableUserInterfaceRecomposition, opt.colorWidth, opt.colorHeight,
                  opt.numBackBuffers);
             g_ctx.sentOpt = opt;
@@ -1944,6 +1972,15 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativePresent(JNIEnv* env, jcl
     sl::DLSSGState state{};
     r = slDLSSGGetState(g_ctx.viewport, state, nullptr);
     g_ctx.lastPresentedCount = r == sl::Result::eOk ? state.numFramesActuallyPresented : 0;
+    if (r == sl::Result::eOk) {
+        g_ctx.dynamicMfgSupported = state.bIsDynamicMFGSupported == sl::Boolean::eTrue;
+        if (!g_ctx.stateLogged) {
+            g_ctx.stateLogged = true;
+            logf("[dlssmc] DLSS-G 能力：多帧上限=%u（最多 %ux）动态多帧=%s 最低分辨率=%u\n",
+                 state.numFramesToGenerateMax, state.numFramesToGenerateMax + 1,
+                 g_ctx.dynamicMfgSupported ? "支持" : "不支持", state.minWidthOrHeight);
+        }
+    }
     readReflexLatency();
     g_ctx.tState = qpcMs(stateMark);
     if (r == sl::Result::eOk) {
@@ -2129,7 +2166,9 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativeSetTuning(JNIEnv*, jclas
                                                                 jboolean retainResources,
                                                                 jboolean menuDetection,
                                                                 jboolean queueParallelism,
-                                                                jboolean uiRecomposition) {
+                                                                jboolean uiRecomposition,
+                                                                jint mode,
+                                                                jfloat dynamicTargetFps) {
     g_ctx.fgShowOnlyInterpolated = showOnly != JNI_FALSE;
     g_ctx.fgRetainResources = retainResources != JNI_FALSE;
     g_ctx.fgMenuDetection = menuDetection != JNI_FALSE;
@@ -2138,6 +2177,16 @@ Java_com_taolesi_dlssmc_nativebridge_DLSSFGNative_nativeSetTuning(JNIEnv*, jclas
     if (ui != g_ctx.fgUiRecomposition) {
         g_ctx.fgUiRecomposition = ui;
         g_ctx.needReset = true;   // 换 UI 重合成要丢历史，避免残影
+    }
+    // 模式或目标帧率变了要丢历史：DLSS-G 换了生成节奏，旧的历史帧对不上
+    int newMode = mode < 0 || mode > 2 ? 0 : (int)mode;
+    float newFps = dynamicTargetFps < 0.0f ? 0.0f : dynamicTargetFps;
+    if (newMode != g_ctx.fgMode || newFps != g_ctx.fgDynamicTargetFps) {
+        g_ctx.fgMode = newMode;
+        g_ctx.fgDynamicTargetFps = newFps;
+        g_ctx.needReset = true;
+        g_ctx.dynamicUnsupportedLogged = false;
+        logf("[dlssmc] DLSS-G 模式改为 %d，目标帧率 %.1f（0=显示器刷新率）\n", newMode, newFps);
     }
 }
 

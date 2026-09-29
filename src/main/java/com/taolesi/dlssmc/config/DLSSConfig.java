@@ -57,6 +57,30 @@ public final class DLSSConfig {
         }
     }
 
+    /**
+     * DLSS-G 工作模式（sl::DLSSGMode）。
+     *
+     * 固定倍数会把真实帧率摊薄成「呈现帧率 / (N+1)」——多帧插得越多，真实帧出来的间隔越长，
+     * 输入延迟同步变大。动态模式让 DLSS-G 按目标帧率只生成够用的张数：真实帧率掉下来时
+     * 自动少插几张把延迟压住，真实帧率有余量时才用满倍数。
+     */
+    public enum DlssgMode {
+        FIXED(0, "固定倍数", "一直按档位生成固定张数。倍数越高越顺，但真实帧率被摊薄，输入延迟同步变高。"),
+        AUTO(1, "自动", "由 DLSS-G 自行决定开或关（eAuto），生成张数仍按档位。"),
+        DYNAMIC(2, "动态（按目标帧率）", "按目标帧率只生成够用的张数（eDynamic）：真实帧率越低插得越少，"
+                + "延迟被压住；有余量时才用满档位。需要驱动支持动态多帧，不支持时自动退回固定倍数。");
+
+        public final int slValue;
+        public final String label;
+        public final String desc;
+
+        DlssgMode(int slValue, String label, String desc) {
+            this.slValue = slValue;
+            this.label = label;
+            this.desc = desc;
+        }
+    }
+
     /** DLSS 超分模型预设，对应 sl::DLSSPreset。只对超分（SR）生效，帧生成没有模型参数。 */
     public enum SrPreset {
         AUTO(0, "自动", "由 DLSS 按当前档位自选，通常是较新的 Transformer 模型"),
@@ -250,6 +274,17 @@ public final class DLSSConfig {
             .comment("诊断用：只显示帧生成出来的那一帧（eShowOnlyInterpolatedFrame），真实帧不上屏。"
                     + "用来确认插帧是否真的在产出新画面，会显著影响观感和延迟，不用于正常游玩。")
             .define("fgShowOnlyInterpolatedFrame", false);
+
+    public static final ModConfigSpec.EnumValue<DlssgMode> DLSSG_MODE = BUILDER
+            .comment("DLSS-G 工作模式。固定倍数 = 一直按档位插满；动态 = 按目标帧率只插够用的张数，"
+                    + "真实帧率低时自动少插，把输入延迟压住（这也是「多帧档位越高延迟越高」的对症开关）。"
+                    + "动态模式需要驱动支持，不支持时自动退回固定倍数并在日志里说明。")
+            .defineEnum("dlssgMode", DlssgMode.DYNAMIC);
+
+    public static final ModConfigSpec.IntValue DLSSG_DYNAMIC_FPS = BUILDER
+            .comment("动态模式的每秒目标帧数。0 = 由 DLSS-G 自动取显示器刷新率。"
+                    + "调低会在真实帧率不足时插得更少、延迟更低；只在动态模式下生效。")
+            .defineInRange("dlssgDynamicTargetFps", 0, 0, 1000);
 
     public static final ModConfigSpec.BooleanValue DLSSG_UNLOCK_MFG = BUILDER
             .comment("解锁多帧生成（3x/4x）。官方把多帧生成限在 RTX 50 上，真正卡住它的是一处"

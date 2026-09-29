@@ -162,10 +162,10 @@ public final class DLSSFGNative {
     /** [DLSS-G 模型, DLSS-SR 模型, Streamline SDK]，来自插件目录里那份 DLL 的文件版本 */
     public static native String[] nativeGetModelVersions();
 
-    /** 下发 DLSS-G 底层开关：只显示插帧 / 关闭时保留资源 / 全屏菜单检测 / 队列并行（仅 Vulkan 生效） / UI 重合成 */
+    /** 下发 DLSS-G 底层开关：只显示插帧 / 关闭时保留资源 / 全屏菜单检测 / 队列并行（仅 Vulkan 生效） / UI 重合成 / 工作模式（0 固定 1 自动 2 动态） / 动态模式目标帧率（0=刷新率） */
     public static native void nativeSetTuning(boolean showOnlyInterpolated, boolean retainResourcesWhenOff,
                                               boolean fullscreenMenuDetection, boolean queueParallelism,
-                                              boolean uiRecomposition);
+                                              boolean uiRecomposition, int mode, float dynamicTargetFps);
 
     /** [模拟→Present, 模拟, 渲染提交, 驱动队列, GPU 渲染, Present, 是否有效]，毫秒，非屏幕延迟；无数据时首项为 -1 */
     public static native double[] nativeGetLatency();
