@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -26,6 +27,27 @@ public class MixinMinecraft {
     @Inject(method = "close", at = @At("HEAD"))
     private void dlssmc$shutdown(CallbackInfo ci) {
         com.taolesi.dlssmc.core.FGRuntime.get().shutdown();
+    }
+
+    /**
+     * 接管上屏时跳过 MC 那次全屏 blit。
+     *
+     * runTick 里 `mainRenderTarget.blitToScreen(w, h)` 是把主目标整个 blit 到 GL 背缓冲。
+     * 我们接管后画面来自自己那条 Vulkan swapchain（呈现窗口盖在 MC 窗口上），
+     * 背缓冲永远不会显示 —— 这一 blit 是纯浪费。而且它排在交付拷贝之前，
+     * 白占关键路径的 GPU 时间，等于把上屏往后推。
+     *
+     * 跳过判据在 FGRuntime.ownsPresent()：严格照抄 presentFrame 的前置条件，
+     * 不成立时老实调原方法，所以菜单、预检期、交回 GL 之后都照常 blit。
+     */
+    @Redirect(method = "runTick",
+            at = @At(value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/pipeline/RenderTarget;blitToScreen(II)V"))
+    private void dlssmc$skipRedundantBlit(RenderTarget target, int width, int height) {
+        if (!com.taolesi.dlssmc.config.DLSSConfig.SKIP_REDUNDANT_BLIT.get()
+                || !com.taolesi.dlssmc.core.FGRuntime.get().ownsPresent()) {
+            target.blitToScreen(width, height);
+        }
     }
 
     @Inject(method = "getMainRenderTarget", at = @At("HEAD"), cancellable = true)

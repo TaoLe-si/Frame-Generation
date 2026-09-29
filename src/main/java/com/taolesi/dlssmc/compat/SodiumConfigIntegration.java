@@ -37,6 +37,12 @@ public class SodiumConfigIntegration implements ConfigEntryPoint {
                 .addOption(dlssgMode(b))
                 .addOption(dlssgDynamicFps(b))
                 .addOption(maxInputLatency(b))
+                .addOption(bool(b, "skip_redundant_blit", "跳过 MC 的冗余全屏 blit",
+                        "MC 每帧会把主目标整个 blit 到 GL 背缓冲，而我们接管上屏后画面来自自建的呈现窗口、"
+                                + "背缓冲被盖住根本不会显示 —— 这次全屏 blit 是纯浪费，还排在交付拷贝之前"
+                                + "白占关键路径的 GPU 时间。判据严格跟随接管状态，菜单/预检/交回 GL 之后照常 blit。"
+                                + "只有在极端情况下（呈现窗口没盖住 MC 窗口）才会看到旧画面，那时关掉它即可。",
+                        DLSSConfig.SKIP_REDUNDANT_BLIT))
                 .addOption(bool(b, "dlssg_unlock_mfg", "解锁多帧生成（3x/4x）",
                         "官方把多帧生成限在 RTX 50，真正卡住它的是一处 GPU 架构门禁："
                                 + "低于该架构的显卡只报上限 1（即 2x），3x/4x 请求会被 NGX 顶回。"
