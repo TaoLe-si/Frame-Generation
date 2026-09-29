@@ -253,9 +253,26 @@ static FgContext g_ctx;
 // 扩展函数要经 vkGetDeviceProcAddr 取，interposer 只导出核心入口
 static PFN_vkGetMemoryWin32HandlePropertiesKHR pGetMemWin32HandleProps = nullptr;
 
+// SL 的 verbose 日志总开关。必须在 slInit **之前**决定（logLevel 是 Preferences 的一部分），
+// 所以走环境变量而不是配置项：它只在诊断插件的能力判定时用得上，不该占设置页的位置。
+//   set DLSSMC_SL_VERBOSE=1
+// 打开后插件自己的判定原因（例如 "Dynamic MFG not supported: denied by DRS key"）
+// 会经 logSl 写进 dlssmc_fg.log —— 默认档位下 eInfo 是被丢掉的。
+static bool slVerboseLog() {
+    static const bool on = []() {
+        char buf[8] = {};
+        const DWORD n = GetEnvironmentVariableA("DLSSMC_SL_VERBOSE", buf, sizeof(buf));
+        return n > 0 && n < sizeof(buf) && buf[0] != '0';
+    }();
+    return on;
+}
+
+// Streamline 的日志回调：默认只放 error/warn，verbose 时连 eInfo 一起写
 static void logSl(sl::LogType type, const char* msg) {
     if (type == sl::LogType::eError || type == sl::LogType::eWarn) {
         logf("[SL/%s] %s\n", type == sl::LogType::eError ? "ERR" : "WRN", msg);
+    } else if (slVerboseLog()) {
+        logf("[SL/INF] %s\n", msg);
     }
 }
 
@@ -444,6 +461,7 @@ static bool initStreamline(const std::wstring& pluginPath, const std::wstring& l
     pref.applicationId = 231313132u; // 占位，正式发布需换成 NVIDIA 发放的 ID
     pref.engine = sl::EngineType::eCustom;
     pref.logMessageCallback = logSl;
+    if (slVerboseLog()) pref.logLevel = sl::LogLevel::eVerbose;
     // 必须带上 eUseFrameBasedResourceTagging，否则 slSetTagForFrame 会直接拒绝
     pref.flags = sl::PreferenceFlags::eDisableCLStateTracking |
                  sl::PreferenceFlags::eAllowOTA |
