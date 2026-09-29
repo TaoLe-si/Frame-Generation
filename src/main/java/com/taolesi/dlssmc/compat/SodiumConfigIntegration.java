@@ -36,6 +36,7 @@ public class SodiumConfigIntegration implements ConfigEntryPoint {
                 .addOption(frameGeneration(b))
                 .addOption(dlssgMode(b))
                 .addOption(dlssgDynamicFps(b))
+                .addOption(maxInputLatency(b))
                 .addOption(bool(b, "dlssg_unlock_mfg", "解锁多帧生成（3x/4x）",
                         "官方把多帧生成限在 RTX 50，真正卡住它的是一处 GPU 架构门禁："
                                 + "低于该架构的显卡只报上限 1（即 2x），3x/4x 请求会被 NGX 顶回。"
@@ -335,6 +336,17 @@ public class SodiumConfigIntegration implements ConfigEntryPoint {
                 .setElementNameProvider(q -> Component.literal(q.label))
                 .setBinding(value::set, value::get)
                 .setStorageHandler(FLUSH);
+    }
+
+    private static IntegerOptionBuilder maxInputLatency(ConfigBuilder b) {
+        return integer(b, "max_input_latency", "输入延迟预算",
+                "插帧会让一个真实帧占掉 N+1 个刷新周期，所以 输入到光子 ≈ (N+1)/刷新率 + 呈现延迟："
+                        + "倍数越高画面越顺、输入延迟也线性变高，这是插帧的固有代价。"
+                        + "设了预算后模组会按这条公式自动把倍数压到放得下的档位（至少保留 2x），"
+                        + "并在状态叠加层里写明降档原因。0 = 不限制。"
+                        + "觉得手感迟钝就往下调（例如 35）。",
+                DLSSConfig.MAX_INPUT_LATENCY, new Range(0, 500, 5),
+                v -> Component.literal(v == 0 ? "不限制" : v + " ms"));
     }
 
     private static IntegerOptionBuilder dlssgDynamicFps(ConfigBuilder b) {

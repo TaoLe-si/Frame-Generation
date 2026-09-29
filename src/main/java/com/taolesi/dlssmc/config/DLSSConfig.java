@@ -286,6 +286,15 @@ public final class DLSSConfig {
                     + "调低会在真实帧率不足时插得更少、延迟更低；只在动态模式下生效。")
             .defineInRange("dlssgDynamicTargetFps", 0, 0, 1000);
 
+    public static final ModConfigSpec.IntValue MAX_INPUT_LATENCY = BUILDER
+            .comment("【输入延迟预算】单位毫秒，0 = 不限制。插帧会让一个真实帧占掉 N+1 个刷新周期，"
+                    + "所以 输入到光子 ≈ (N+1)/刷新率 + 呈现延迟 —— 倍数越高画面越顺、输入延迟也线性变高，"
+                    + "这是插帧的固有代价，不是实现缺陷。设了预算之后，模组会按这条公式自动把倍数压到"
+                    + "预算放得下的档位（至少保留 2x），并在状态叠加层里写明降档原因。"
+                    + "50 ms 是个温和的默认：100Hz 屏上允许到 5x，60Hz 屏上允许到 3x。"
+                    + "觉得手感迟钝就往下调（例如 35）。")
+            .defineInRange("maxInputLatencyMs", 50, 0, 500);
+
     public static final ModConfigSpec.BooleanValue DLSSG_UNLOCK_MFG = BUILDER
             .comment("解锁多帧生成（3x/4x）。官方把多帧生成限在 RTX 50 上，真正卡住它的是一处"
                     + "GPU 架构门禁：nvngx_dlssg.dll 里低于该架构的显卡一律只报上限 1（即 2x），"

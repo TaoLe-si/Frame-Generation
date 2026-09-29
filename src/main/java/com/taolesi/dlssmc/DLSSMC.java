@@ -50,6 +50,8 @@ public class DLSSMC {
         }
         String latency = fg.getLatencyText();
         if (latency != null) gui.drawString(mc.font, latency, 6, 42, 0xFFCC66);
+        String inputLatency = fg.getInputLatencyText();
+        if (inputLatency != null) gui.drawString(mc.font, inputLatency, 6, 126, 0xFFCC66);
         gui.drawString(mc.font, "配置：Boost=" + DLSSConfig.REFLEX_BOOST.get()
                 + " 限帧=" + DLSSConfig.REFLEX_FPS_LIMIT.get()
                 + " 队列并行=" + DLSSConfig.FG_QUEUE_PARALLELISM.get()

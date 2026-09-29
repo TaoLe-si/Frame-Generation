@@ -100,7 +100,11 @@ public final class FGRuntime {
     private int lastResult = 0;
     private long presentedFrames = 0;
     private final FpsSampler fps = new FpsSampler();
+    // 输入延迟预算：按 (N+1)/刷新率 自动压倍数。只对 DLSS 后端生效（那边才有 N 档可调）。
+    private final LatencyGovernor governor = new LatencyGovernor();
     private int tunedFlags = -1;
+    // 最近一次因延迟预算降档的说明；没降档时为 null
+    private String governorNote;
     private int tunedFps = -1;
     private double[] latency;
     private double[] bridge;
@@ -244,6 +248,20 @@ public final class FGRuntime {
                 l[0], l[1], l[2], l[3], l[4], l[5]);
     }
 
+    /**
+     * 插帧本身的延迟成本：一个真实帧要占 N+1 个刷新周期，所以 输入到光子 ≈ (N+1)/刷新率。
+     * 刷新率由呈现帧率的上限学出来，没学到之前不显示。
+     */
+    public String getInputLatencyText() {
+        int frames = configuredFrames;
+        if (backend != DLSSConfig.Backend.DLSS || frames <= 0) return null;
+        double ms = governor.estimatedLatencyMs(frames);
+        if (ms < 0) return null;
+        String base = String.format("插帧输入延迟 ≈ %.1f ms =（%d+1）/%.0fHz",
+                ms, frames, governor.refreshEstimate());
+        return governorNote == null ? base : base + "｜" + governorNote;
+    }
+
     /** 我们这条 GL→D3D11→Vulkan 桥每帧自己花掉的时间 */
     public String getBridgeText() {
         double[] b = bridge;
@@ -315,6 +333,8 @@ public final class FGRuntime {
 
     public void recordPresentation(long now, int presented, boolean takeover) {
         fps.record(now, presented, takeover);
+        // 呈现帧率被顶到刷新率上限时就是刷新率本身，用它喂延迟预算的刷新率估计
+        if (fps.isAvailable()) governor.observePresentationFps(fps.presentationFps());
     }
 
     public void invalidate() {
@@ -757,6 +777,20 @@ public final class FGRuntime {
         if (wanted != backend) switchBackend(wanted);
         if (!worldActive || !deviceReady || pendingDisable) return;
         int requested = DLSSConfig.activeFramesToGenerate();
+        // 延迟预算只压 DLSS-G 的倍数档：FSR/XeSS 那边没有可调的 N（库自己定），预算无从施加。
+        if (!usesDx() && requested > 0) {
+            int governed = governor.apply(requested, DLSSConfig.MAX_INPUT_LATENCY.get());
+            if (governed != requested) {
+                String reason = governor.lastReason();
+                if (reason != null && !reason.equals(governorNote)) {
+                    governorNote = reason;
+                    status = reason;
+                }
+                requested = governed;
+            } else {
+                governorNote = null;
+            }
+        }
         if (requested != configuredFrames) {
             if (requested == 0) {
                 pendingDisable = true;
