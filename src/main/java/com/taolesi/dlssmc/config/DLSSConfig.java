@@ -286,6 +286,14 @@ public final class DLSSConfig {
                     + "调低会在真实帧率不足时插得更少、延迟更低；只在动态模式下生效。")
             .defineInRange("dlssgDynamicTargetFps", 0, 0, 1000);
 
+    public static final ForgeConfigSpec.BooleanValue SKIP_REDUNDANT_BLIT = BUILDER
+            .comment("接管上屏时跳过 MC 自己那次全屏 blit。MC 每帧会把主目标整个 blit 到 GL 背缓冲，"
+                    + "而我们接管后画面来自自建的呈现窗口、背缓冲被盖住根本不会显示 —— 这一次全屏 blit "
+                    + "是纯浪费，还排在交付拷贝之前白占关键路径的 GPU 时间。"
+                    + "判据严格跟随接管状态，菜单/预检/交回 GL 之后都照常 blit。"
+                    + "只有在极端情况下（呈现窗口没盖住 MC 窗口）才会看到旧画面，那时把它关掉即可。")
+            .define("skipRedundantBlit", true);
+
     public static final ForgeConfigSpec.IntValue MAX_INPUT_LATENCY = BUILDER
             .comment("【输入延迟预算】单位毫秒，0 = 不限制。插帧会让一个真实帧占掉 N+1 个刷新周期，"
                     + "所以 输入到光子 ≈ (N+1)/刷新率 + 呈现延迟 —— 倍数越高画面越顺、输入延迟也线性变高，"

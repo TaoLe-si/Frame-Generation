@@ -1045,6 +1045,27 @@ public final class FGRuntime {
     }
 
     /**
+     * 这一帧会不会由我们上屏。给 MixinMinecraft 用：我们接管时 MC 那次
+     * `mainRenderTarget.blitToScreen()` 是把整幅画面 blit 到 GL 背缓冲，
+     * 而背缓冲被我们的呈现窗口盖住、根本不会显示 —— 纯浪费一次全屏 blit，
+     * 而且它排在我们的交付拷贝之前，直接占在关键路径上。
+     *
+     * <p>判据严格照抄 presentFrame 的前置条件（并额外要求上一次上屏成功、
+     * 且已经过了预检），所以它成立的帧 presentFrame 也一定会接管；
+     * 反过来不成立时一律老实 blit。没有任何副作用，可以在帧中途随便调。
+     */
+    public boolean ownsPresent() {
+        return frameCaptured
+                && worldActive && !pendingDisable
+                && DLSSConfig.activeFramesToGenerate() > 0
+                && deviceReady && hasPrev
+                && hudlessTex >= 0
+                && !takeoverOff
+                && armed
+                && lastResult == 0;
+    }
+
+    /**
      * 替换 GL 的上屏。由 MixinWindow 调用。
      *
      * @return true 表示已经由我们上屏，调用方应跳过 RenderSystem.flipFrame
