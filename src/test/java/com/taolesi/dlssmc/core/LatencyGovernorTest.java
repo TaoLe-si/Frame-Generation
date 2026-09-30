@@ -9,75 +9,68 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 延迟预算的算术：输入到光子 ≈ (N+1)/刷新率，预算放不下就压倍数。
- * 判据是"(N+1)/刷新率 ≤ 预算"，边界和"至少留 2x"都要钉住。
+ * 延迟预算的算术：输入到光子 ≈ 工作耗时 + (N+1)/刷新率。
+ * 三项输入（系统刷新率 / 估计刷新率 / 实测工作耗时）各自缺失时的退化行为、
+ * 边界值、以及「至少留 2x」都要钉住。
  */
 class LatencyGovernorTest {
 
+    /** 造一个「系统给了刷新率、有实测工作耗时」的常规状态。 */
+    private static LatencyGovernor withRefresh(int hz) {
+        LatencyGovernor g = new LatencyGovernor();
+        g.setReferenceRefresh(hz);
+        return g;
+    }
+
+    // ------------------------------------------------------------ 输入缺失
+
     @Test
     void noBudgetMeansNoConstraint() {
-        LatencyGovernor g = new LatencyGovernor();
-        g.observePresentationFps(100.0);
+        LatencyGovernor g = withRefresh(100);
         assertEquals(4, g.apply(4, 0.0));
         assertNull(g.lastReason());
     }
 
     @Test
-    void noRefreshEstimateMeansNoConstraint() {
+    void noRefreshAtAllMeansNoConstraint() {
         LatencyGovernor g = new LatencyGovernor();
-        assertFalse(g.hasRefreshEstimate());
+        assertFalse(g.refreshIsMeasured());
+        assertEquals(0.0, g.refresh());
         assertEquals(3, g.apply(3, 16.0));
         assertNull(g.lastReason());
         assertEquals(-1.0, g.estimatedLatencyMs(3));
     }
 
     @Test
-    void budgetExactlyFitsKeepsRequestedTier() {
+    void estimatedRefreshUsedWhenSystemValueMissing() {
         LatencyGovernor g = new LatencyGovernor();
         g.observePresentationFps(100.0);
-        // 100Hz 下 3x 要 (2+1)/100 = 30ms，预算 30ms 正好放得下
-        assertEquals(2, g.apply(2, 30.0));
-        assertNull(g.lastReason());
+        assertFalse(g.refreshIsMeasured());
+        assertEquals(100.0, g.refresh());
+        // 没有实测工作耗时时按一个刷新周期估，模型退化成 (N+2)/R：
+        // N=4（5x）要 10 + 5/100*1000 = 60ms，预算 60ms 正好放得下
+        assertEquals(4, g.apply(4, 60.0));
+        // 收紧到 59ms 就只放得下 N=3（4x，要 50ms）
+        assertEquals(3, g.apply(4, 59.0));
     }
 
     @Test
-    void budgetOverrunStepsTierDown() {
+    void systemRefreshWinsOverEstimate() {
         LatencyGovernor g = new LatencyGovernor();
         g.observePresentationFps(100.0);
-        // 4x 要 50ms > 40ms 预算 -> 40ms*100Hz=4 档 -> N=3，即 4x 放得下？
-        // floor(40*100/1000)-1 = 3，请求 3（4x）时 allowed=3 刚好，所以降一档要看 5x。
-        assertEquals(3, g.apply(4, 40.0));
-        assertEquals(3, g.lastApplied());
-        assertNotNull(g.lastReason());
-        // 5x 要 60ms，预算 40ms -> N<=3，降到 4x
-        LatencyGovernor g2 = new LatencyGovernor();
-        g2.observePresentationFps(100.0);
-        assertEquals(3, g2.apply(4, 40.0));
+        g.setReferenceRefresh(60);
+        assertTrue(g.refreshIsMeasured());
+        assertEquals(60.0, g.refresh());
     }
 
     @Test
-    void sixtyHzBudgetFortyMsAllowsAtMostThreeX() {
+    void implausibleSystemRefreshIgnored() {
         LatencyGovernor g = new LatencyGovernor();
-        g.observePresentationFps(60.0);
-        // floor(40*60/1000)-1 = 1 -> 只放得下 2x
-        assertEquals(1, g.apply(3, 40.0));
-        assertEquals(1, g.lastApplied());
-    }
-
-    @Test
-    void alwaysKeepsAtLeastTwoX() {
-        LatencyGovernor g = new LatencyGovernor();
-        g.observePresentationFps(60.0);
-        // 预算 5ms 连 2x（33ms）都放不下，但仍给 2x：用户要的是"少插"，不是"关掉"
-        assertEquals(1, g.apply(4, 5.0));
-        assertEquals(1, g.lastApplied());
-    }
-
-    @Test
-    void disabledTierStaysDisabled() {
-        LatencyGovernor g = new LatencyGovernor();
-        g.observePresentationFps(100.0);
-        assertEquals(0, g.apply(0, 40.0));
+        g.setReferenceRefresh(0);      // 驱动报 0 很常见
+        g.setReferenceRefresh(10000);
+        assertFalse(g.refreshIsMeasured());
+        g.observePresentationFps(120.0);
+        assertEquals(120.0, g.refresh());
     }
 
     @Test
@@ -85,29 +78,122 @@ class LatencyGovernorTest {
         LatencyGovernor g = new LatencyGovernor();
         g.observePresentationFps(100.0);
         g.observePresentationFps(60.0);
-        assertEquals(100.0, g.refreshEstimate());
-        // 离谱的采样不采信
+        assertEquals(100.0, g.refresh());
         g.observePresentationFps(5.0);
         g.observePresentationFps(5000.0);
-        assertEquals(100.0, g.refreshEstimate());
+        assertEquals(100.0, g.refresh());
+    }
+
+    // ------------------------------------------------------------ 工作耗时
+
+    @Test
+    void pipelineTimeShrinksTheAllowedTier() {
+        LatencyGovernor g = withRefresh(100);
+        // 无实测：工作按 1 个周期算，60ms 预算 -> (预算-10)*100/1000-1 = 4
+        assertEquals(4, g.apply(5, 60.0));
+        // 实测工作 25ms：allowed = (60-25)*100/1000-1 = 2（3x）
+        g.observePipelineMs(25.0);
+        assertEquals(2, g.apply(5, 60.0));
+        assertEquals(2, g.lastApplied());
+        assertNotNull(g.lastReason());
+    }
+
+    /**
+     * 工作耗时按「取最坏、但向下衰减 15%」平滑：预算要防的是最坏那一帧，
+     * 但也不能让一次尖峰永久毒化预算 —— 机器真的变快了要能降下来。
+     */
+    @Test
+    void pipelineTimeIsSmoothedTowardTheWorstCase() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(30.0);
+        assertEquals(30.0, g.pipelineMs(), 0.001);
+        // 好帧不会立刻把估计拉低，而是按 15% 衰减
+        g.observePipelineMs(10.0);
+        assertEquals(25.5, g.pipelineMs(), 0.001);
+        // 坏帧立刻抬上去
+        g.observePipelineMs(40.0);
+        assertEquals(40.0, g.pipelineMs(), 0.001);
+        // 连续好帧能把估计收敛下去
+        for (int i = 0; i < 40; i++) g.observePipelineMs(5.0);
+        assertEquals(5.0, g.pipelineMs(), 0.001);
     }
 
     @Test
-    void estimatedLatencyFollowsTier() {
-        LatencyGovernor g = new LatencyGovernor();
-        g.observePresentationFps(100.0);
-        assertEquals(20.0, g.estimatedLatencyMs(1), 0.001);
-        assertEquals(50.0, g.estimatedLatencyMs(4), 0.001);
+    void implausiblePipelineSamplesIgnored() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(-1.0);
+        g.observePipelineMs(0.0);
+        g.observePipelineMs(5000.0);
+        assertEquals(0.0, g.pipelineMs());
     }
 
     @Test
-    void resetClearsEstimateAndReason() {
+    void workTimeIsAddedToTheDisplayTerm() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(8.0);
+        // 2x（N=1）：8 + 2/100*1000 = 28ms
+        assertEquals(28.0, g.estimatedLatencyMs(1), 0.001);
+        // 5x（N=4）：8 + 5/100*1000 = 58ms
+        assertEquals(58.0, g.estimatedLatencyMs(4), 0.001);
+    }
+
+    // ------------------------------------------------------------ 决策边界
+
+    @Test
+    void budgetExactlyFitsKeepsRequestedTier() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(10.0);
+        // 4x 要 10 + 4/100*1000 = 50ms，预算 50ms 正好放得下
+        assertEquals(3, g.apply(3, 50.0));
+        assertNull(g.lastReason());
+    }
+
+    @Test
+    void budgetOverrunStepsTierDown() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(10.0);
+        // 5x 要 60ms > 40ms 预算 -> allowed = (40-10)*100/1000-1 = 2（3x）
+        assertEquals(2, g.apply(4, 40.0));
+        assertEquals(2, g.lastApplied());
+        assertNotNull(g.lastReason());
+    }
+
+    @Test
+    void sixtyHzBudgetFortyMsAllowsAtMostThreeX() {
+        LatencyGovernor g = withRefresh(60);
+        // 无实测工作耗时：allowed = (40-16.67)*60/1000-1 = 0 -> 夹到 1（2x）
+        assertEquals(1, g.apply(3, 40.0));
+        assertEquals(1, g.lastApplied());
+    }
+
+    @Test
+    void alwaysKeepsAtLeastTwoX() {
+        LatencyGovernor g = withRefresh(60);
+        // 预算压到连 2x 都放不下（工作耗时就已经超预算）时仍给 2x
+        g.observePipelineMs(50.0);
+        assertEquals(1, g.apply(4, 5.0));
+        assertEquals(1, g.lastApplied());
+    }
+
+    @Test
+    void disabledTierStaysDisabled() {
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(10.0);
+        assertEquals(0, g.apply(0, 40.0));
+    }
+
+    @Test
+    void resetClearsEverything() {
         LatencyGovernor g = new LatencyGovernor();
+        g.setReferenceRefresh(60);
         g.observePresentationFps(60.0);
+        g.observePipelineMs(20.0);
         g.apply(3, 20.0);
         g.reset();
-        assertFalse(g.hasRefreshEstimate());
+        assertFalse(g.refreshIsMeasured());
+        assertEquals(0.0, g.refresh());
+        assertEquals(0.0, g.pipelineMs());
         assertEquals(-1, g.lastApplied());
-        assertTrue(g.apply(3, 20.0) == 3);
+        assertEquals(3, g.apply(3, 20.0));
     }
 }
