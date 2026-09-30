@@ -259,10 +259,17 @@ public final class FGRuntime {
         if (ms < 0) return null;
         double r = governor.refresh();
         double work = governor.pipelineMs() > 0 ? governor.pipelineMs() : 1000.0 / r;
-        String base = String.format("插帧输入延迟 ≈ %.1f ms = 工作 %.1f + 显示 %.1f（%d 张插帧后真实帧才上屏，%s %.0fHz）",
+        StringBuilder sb = new StringBuilder(String.format(
+                "插帧输入延迟 ≈ %.1f ms = 工作 %.1f + 显示 %.1f（%d 张插帧后真实帧才上屏，%s %.0fHz）",
                 ms, work, (frames + 1) * 1000.0 / r, frames,
-                governor.refreshIsMeasured() ? "系统" : "估计", r);
-        return governorNote == null ? base : base + "｜" + governorNote;
+                governor.refreshIsMeasured() ? "系统" : "估计", r));
+        // 队列与呈现段没进模型，但要是它们不小就得让人看见，否则模型会显得比实际乐观
+        double excluded = LatencyGovernor.excludedFromReflex(latency);
+        if (excluded > 2.0) {
+            sb.append(String.format("｜另有缓冲+呈现 %.1f ms 未计入", excluded));
+        }
+        if (governorNote != null) sb.append("｜").append(governorNote);
+        return sb.toString();
     }
 
     /** 我们这条 GL→D3D11→Vulkan 桥每帧自己花掉的时间 */
@@ -914,12 +921,24 @@ public final class FGRuntime {
         }
     }
 
+    /**
+     * 延迟预算的「工作耗时」项：只取 **模拟 + 提交 + GPU** 三段。
+     *
+     * <p>Reflex 的 {@code latTotal} 是 模拟→Present 的全长，还包含「OS 渲染队列」与「Present」
+     * 两段。这两段恰恰是**节奏等待**发生的地方 —— DLSS-G 在 Present 里等显示槽位就落在
+     * {@code latPresent} 里。而显示等待已经被模型里的 {@code (N+1)/刷新率} 项覆盖，
+     * 把 latTotal 整段当工作耗时用会**双重计入**，模型偏保守，白白把用户能开的档位压掉。
+     *
+     * <p>所以只取这段帧自己产出画面所必需的开销；队列与呈现段单独在叠加层里显示出来
+     * （{@code getInputLatencyText} 的尾巴），不进模型但也不藏起来。
+     * 挑选规则本身在 {@link LatencyGovernor#workFromReflex(double[])}，纯算术、可单测。
+     */
+
     /** 低频轮询：刷新率（几乎不变）+ Reflex 实测的工作耗时（每 16 帧取一次就够） */
     private void feedLatencyGovernor() {
         feedRefreshRate();
-        if (latency != null && latency.length > 6 && latency[6] >= 0.5) {
-            governor.observePipelineMs(latency[0]);
-        }
+        double work = LatencyGovernor.workFromReflex(latency);
+        if (work > 0) governor.observePipelineMs(work);
     }
 
     private boolean startDlssFrame() {

@@ -137,6 +137,43 @@ class LatencyGovernorTest {
         assertEquals(58.0, g.estimatedLatencyMs(4), 0.001);
     }
 
+    // ------------------------------------------------- 从 Reflex 分段挑工作耗时
+
+    /** 数组顺序：[0]全长 [1]模拟 [2]提交 [3]队列 [4]GPU [5]呈现 [6]有效 */
+    @Test
+    void workTermTakesOnlySimSubmitAndGpu() {
+        double[] r = {100.0, 1.5, 2.0, 30.0, 6.5, 40.0, 1.0};
+        // 1.5 + 2.0 + 6.5 = 10.0；队列 30 与呈现 40 不计入
+        assertEquals(10.0, LatencyGovernor.workFromReflex(r), 0.001);
+        assertEquals(70.0, LatencyGovernor.excludedFromReflex(r), 0.001);
+    }
+
+    /**
+     * 双重计入的守卫：DLSS-G 在 Present 里等显示槽位时，那段时间落在「呈现」段里。
+     * 显示等待已经由 (N+1)/刷新率 项覆盖，工作项就不该把它再加一遍。
+     */
+    @Test
+    void pacingWaitInsidePresentIsNotCountedTwice() {
+        // 一个被节奏拖住的帧：全长 60ms，但真正的产出开销只有 8ms，其余都在呈现里等
+        double[] r = {60.0, 2.0, 1.0, 0.0, 5.0, 49.0, 1.0};
+        assertEquals(8.0, LatencyGovernor.workFromReflex(r), 0.001);
+        LatencyGovernor g = withRefresh(100);
+        g.observePipelineMs(LatencyGovernor.workFromReflex(r));
+        // 4x 的估计 = 8 + 4/100*1000 = 48ms，而不是把 60 再加一遍的 108ms
+        assertEquals(48.0, g.estimatedLatencyMs(3), 0.001);
+    }
+
+    @Test
+    void reflexSegmentsRejectedWhenInvalidOrMalformed() {
+        assertEquals(0.0, LatencyGovernor.workFromReflex(null));
+        assertEquals(0.0, LatencyGovernor.workFromReflex(new double[]{1, 2, 3}));
+        assertEquals(0.0, LatencyGovernor.excludedFromReflex(null));
+        // [6] < 0.5 表示这一帧没有有效数据
+        double[] invalid = {100.0, 1.0, 2.0, 3.0, 4.0, 5.0, 0.0};
+        assertEquals(0.0, LatencyGovernor.workFromReflex(invalid));
+        assertEquals(0.0, LatencyGovernor.excludedFromReflex(invalid));
+    }
+
     // ------------------------------------------------------------ 决策边界
 
     @Test
