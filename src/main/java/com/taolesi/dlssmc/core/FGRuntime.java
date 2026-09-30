@@ -257,8 +257,11 @@ public final class FGRuntime {
         if (backend != DLSSConfig.Backend.DLSS || frames <= 0) return null;
         double ms = governor.estimatedLatencyMs(frames);
         if (ms < 0) return null;
-        String base = String.format("插帧输入延迟 ≈ %.1f ms =（%d+1）/%.0fHz",
-                ms, frames, governor.refreshEstimate());
+        double r = governor.refresh();
+        double work = governor.pipelineMs() > 0 ? governor.pipelineMs() : 1000.0 / r;
+        String base = String.format("插帧输入延迟 ≈ %.1f ms = 工作 %.1f + 显示 %.1f（%d 张插帧后真实帧才上屏，%s %.0fHz）",
+                ms, work, (frames + 1) * 1000.0 / r, frames,
+                governor.refreshIsMeasured() ? "系统" : "估计", r);
         return governorNote == null ? base : base + "｜" + governorNote;
     }
 
@@ -565,6 +568,8 @@ public final class FGRuntime {
                         finalTex, hudlessTex, depthMv.getDepthTexture(), depthMv.getMotionTexture(),
                         worldTex < 0 ? 0 : worldTex, srOutTex < 0 ? 0 : srOutTex, renderW, renderH);
         if (r == 0 && !usesDx()) {
+            // 先把刷新率喂进去再定档：否则第一帧没有刷新率，预算按配置原值放行一次
+            feedRefreshRate();
             int requested = DLSSConfig.activeFramesToGenerate();
             r = DLSSFGNative.nativeSetEnabled(requested > 0 ? 1 : 0);
             if (r == 0 && requested > 0) {
@@ -878,11 +883,42 @@ public final class FGRuntime {
                 if ((latencyTick++ & 15) == 0) {
                     latency = DLSSFGNative.nativeGetLatency();
                     bridge = DLSSFGNative.nativeGetBridgeTimings();
+                    feedLatencyGovernor();
                 }
             }
         }
         if (!usesDx() && isEnabled() && startDlssFrame()) {
             org.lwjgl.glfw.GLFW.glfwPollEvents();
+        }
+    }
+
+    /**
+     * 给延迟预算喂两个实测输入（跟着 latency 的低频轮询一起走，刷新率不会每帧变）。
+     *
+     * <ul>
+     *   <li><b>刷新率</b>：直接问系统（{@code Window.getRefreshRate()}），不再靠呈现帧率峰值去估。
+     *       呈现帧率只有在插帧把屏跑满时才等于刷新率，没跑满就会低估，而低估会让预算算出
+     *       偏小的延迟、放行过高的倍数。系统值拿不到时（驱动报 0）才退回估计。</li>
+     *   <li><b>工作耗时</b>：Reflex 报的「模拟→Present」。输入是在 {@code slReflexSleep}
+     *       之后才采样的，所以这段直接加在输入到光子的关键路径上，必须算进预算。</li>
+     * </ul>
+     */
+    private void feedRefreshRate() {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.getWindow() != null) {
+                governor.setReferenceRefresh(mc.getWindow().getRefreshRate());
+            }
+        } catch (Throwable ignored) {
+            // 刷新率拿不到就退回用呈现帧率峰值估，不该因为一个诊断输入影响主流程
+        }
+    }
+
+    /** 低频轮询：刷新率（几乎不变）+ Reflex 实测的工作耗时（每 16 帧取一次就够） */
+    private void feedLatencyGovernor() {
+        feedRefreshRate();
+        if (latency != null && latency.length > 6 && latency[6] >= 0.5) {
+            governor.observePipelineMs(latency[0]);
         }
     }
 
