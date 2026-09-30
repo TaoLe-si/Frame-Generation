@@ -12,9 +12,13 @@ package com.taolesi.dlssmc.core;
  *     输入到光子 ≈ 工作耗时 + (N+1)/刷新率
  * </pre>
  * <ul>
- *   <li><b>工作耗时</b>：Reflex 报的「模拟→Present」实测值。输入是在 {@code slReflexSleep}
- *       之后才采样的，所以这段工作直接加在输入到光子的关键路径上。机器越快这段越短，
- *       这也是 Reflex「尽量晚采样输入」的意义所在。</li>
+ *   <li><b>工作耗时</b>：这段帧自己产出画面所必需的开销（Reflex 的
+ *       <b>模拟 + 提交 + GPU</b> 三段之和）。输入是在 {@code slReflexSleep} 之后才采样的，
+ *       所以这段直接加在输入到光子的关键路径上；机器越快它越短，这也是 Reflex
+ *       「尽量晚采样输入」的意义。
+ *       <b>有意不含</b> Reflex 的「OS 渲染队列」与「Present」两段：那是节奏等待发生的地方
+ *       （DLSS-G 在 Present 里等显示槽位就落在其中），而显示等待已经由下面的
+ *       {@code (N+1)/刷新率} 项覆盖 —— 两段都算就是双重计入，会让模型偏保守。</li>
  *   <li><b>(N+1)/刷新率</b>：显示侧。一次 Present 吐出 N+1 帧占满 N+1 个刷新周期，
  *       而真实帧是这一组里的**最后一帧**（前面先放 N 张插帧去补上一组到这一组之间的空隙），
  *       所以它比 Present 晚 N 个周期上屏；再加最多一个周期的对齐余量，即 (N+1)/刷新率。</li>
@@ -59,8 +63,8 @@ final class LatencyGovernor {
     }
 
     /**
-     * Reflex 实测的「模拟→Present」耗时。取滑动最大值而不是平均：预算要防的是最坏那一帧，
-     * 平均值会低估尖峰。
+     * 实测的「工作耗时」（模拟 + 提交 + GPU，不含队列与呈现段，理由见类注释）。
+     * 按「取最坏、向下衰减 15%」平滑：预算要防的是最坏那一帧，但一次尖峰不该永久毒化预算。
      */
     void observePipelineMs(double ms) {
         if (!(ms > 0.0) || ms > 1000.0) return;
@@ -111,6 +115,28 @@ final class LatencyGovernor {
     /** 上一次 apply 的降档原因；没降档时为 null。 */
     String lastReason() {
         return lastReason;
+    }
+
+    // ------------------------------------------------- 从 Reflex 分段里挑工作耗时
+
+    /**
+     * 从 Reflex 分段数组里挑出「工作耗时」：模拟 + 提交 + GPU。
+     *
+     * <p>数组顺序与 {@code DLSSFGNative.nativeGetLatency()} 一致：
+     * {@code [0]=模拟→Present 全长, [1]=模拟, [2]=提交, [3]=OS 渲染队列, [4]=GPU, [5]=Present, [6]=有效标志}。
+     * 有意不含 [3] 与 [5]（节奏等待，已由显示项覆盖），理由见类注释。
+     *
+     * @return 毫秒；数组不合法或该帧无效时返回 0
+     */
+    static double workFromReflex(double[] reflex) {
+        if (reflex == null || reflex.length < 7 || reflex[6] < 0.5) return 0.0;
+        return reflex[1] + reflex[2] + reflex[4];
+    }
+
+    /** 同一份分段里没进模型的两段（队列 + 呈现），只用于在叠加层里让人看见。 */
+    static double excludedFromReflex(double[] reflex) {
+        if (reflex == null || reflex.length < 7 || reflex[6] < 0.5) return 0.0;
+        return reflex[3] + reflex[5];
     }
 
     // ---------------------------------------------------------------- 决策
