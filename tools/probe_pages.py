@@ -16,7 +16,10 @@ JAVA_HOME = r"D:\Java17\jdk-17.0.18"
 JAVAC = os.path.join(JAVA_HOME, "bin", "javac.exe")
 JAVA = os.path.join(JAVA_HOME, "bin", "java.exe")
 
-MOD_JAR = os.path.join(FORK, "build", "libs", "frame-generation-0.2.2.jar")
+# 按 glob 找最新产物，不写死版本号
+_jars = sorted(glob.glob(os.path.join(FORK, "build", "libs", "frame-generation-*.jar")),
+               key=os.path.getmtime, reverse=True)
+MOD_JAR = _jars[0] if _jars else os.path.join(FORK, "build", "libs", "frame-generation.jar")
 SRC = os.path.join(FORK, "native", "test", "EmbeddiumPageCheck.java")
 OUT = os.path.join(FORK, "native", "test", "build", "java")
 

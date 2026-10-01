@@ -9,6 +9,7 @@ dlssmc —— 整合包本身有别的模组会在构造 Minecraft 时崩（Skyb
 
 日志写在探测实例的 logs/probe-launch.log。
 """
+import glob
 import json, os, shutil, subprocess, sys
 
 FORK = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,8 +20,10 @@ NATIVES = os.path.join(INST, "GregTech Leisure-natives")
 
 # 探测实例只要这几个：Embeddium 给选项 API，Oculus 是 FGRuntime 编译期依赖，
 # dlssmc 是被测对象。Forge 与 MC 本身在 classpath 上，不用放进 mods。
+_jars = sorted(glob.glob(os.path.join(FORK, "build", "libs", "frame-generation-*.jar")),
+               key=os.path.getmtime, reverse=True)
 MINIMAL_MODS = ["embeddium-0.3.31+mc1.20.1.jar", "oculus-mc1.20.1-1.8.0.jar",
-                "frame-generation-0.2.2.jar"]
+                os.path.basename(_jars[0]) if _jars else "frame-generation.jar"]
 
 use_instance = "--instance" in sys.argv
 GAME_DIR = INST if use_instance else os.path.join(FORK, "run-probe")

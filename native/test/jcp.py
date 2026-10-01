@@ -4,6 +4,7 @@
 ForgeGradle 6 不生成这个文件。这里直接从整合包实例拼：libraries 里的 artifact +
 版本目录里的 client jar + 编译期那两个光影模组，和实机加载的是同一批字节码。
 """
+import glob
 import json
 import os
 
@@ -88,7 +89,11 @@ def classpath(fork_root):
                                     forge_ver, f"{art}-{forge_ver}-universal.jar"
                                     if art == "forge" else f"{art}-{forge_ver}.jar"))
     # 被测的 mod 本体：用 reobf 过的 jar，和实机加载的是同一份字节码
-    entries.append(os.path.join(fork_root, "build", "libs", "frame-generation-0.2.2.jar"))
+    # 被测的 mod 本体按 glob 找最新产物 —— 写死版本号的话每次提升版本都要跟着改
+    libs = os.path.join(fork_root, "build", "libs")
+    jars = sorted(glob.glob(os.path.join(libs, "frame-generation-*.jar")),
+                  key=os.path.getmtime, reverse=True)
+    entries.append(jars[0] if jars else os.path.join(libs, "frame-generation.jar"))
     for name in PREREQ_MODS:
         entries.append(os.path.join(INST, "mods", name))
     # 生产加载路径是从 classpath 资源里解包 DLL，所以产物目录也得在
