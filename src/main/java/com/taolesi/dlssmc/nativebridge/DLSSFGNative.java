@@ -48,12 +48,24 @@ public final class DLSSFGNative {
             Files.createDirectories(dir);
             for (String name : RUNTIME_DLLS) {
                 Path out = dir.resolve(name);
-                // 已解包且非空就跳过：换世界/换后端会重复调，不必每次重写 3MB
-                if (Files.isRegularFile(out) && Files.size(out) > 0) continue;
-                try (var in = DLSSFGNative.class.getResourceAsStream(
-                        "/dlssmc/native/" + RUNTIME_DIR + "/" + name)) {
+                String res = "/dlssmc/native/" + RUNTIME_DIR + "/" + name;
+                long expected = resourceSize(res);
+                // 「存在且非空」就跳过是不够的：进程被中途杀掉（或磁盘写满）会留下半截 DLL，
+                // 而半截文件同样非空 —— 于是它会被永久沿用，表现为每次启动都
+                // UnsatisfiedLinkError，用户重装 mod 也修不好。改成比对 jar 内的真实大小。
+                if (Files.isRegularFile(out) && expected > 0 && Files.size(out) == expected) continue;
+                try (var in = DLSSFGNative.class.getResourceAsStream(res)) {
                     if (in == null) return null;
-                    Files.copy(in, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    // 先写临时文件再原子改名：中途失败不会留下可用的半截文件
+                    Path tmp = dir.resolve(name + ".part");
+                    Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    if (expected > 0 && Files.size(tmp) != expected) {
+                        Files.deleteIfExists(tmp);
+                        throw new IllegalStateException(
+                                name + " 解包不完整：期望 " + expected + " 字节，实得 "
+                                        + Files.size(tmp) + " 字节（磁盘空间或杀软拦截？）");
+                    }
+                    moveIntoPlace(tmp, out);
                 }
             }
             return dir;
@@ -77,6 +89,50 @@ public final class DLSSFGNative {
         return ensureBundledRuntime(nativeCacheDir);
     }
 
+    /** 原子改名；文件系统不支持时退回普通改名（网络盘 / exFAT 上 ATOMIC_MOVE 会抛） */
+    private static void moveIntoPlace(Path tmp, Path out) throws java.io.IOException {
+        try {
+            Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /**
+     * 本机有没有 MSVC 运行库。返回空串表示看起来是齐的，否则返回一句可直接照做的提示。
+     *
+     * <p>为什么值得单独判：{@code dlssmc_fg.dll} 与随包的全部 9 个 Streamline DLL 都静态导入
+     * {@code MSVCP140 / VCRUNTIME140 / VCRUNTIME140_1}。开发机上装了 MSVC 所以永远有，
+     * 换一台没装运行库的机器就会以 {@code UnsatisfiedLinkError} 的形式炸掉，
+     * 而那条消息在叠加层里通常被屏幕边缘截断 —— 用户只看到「加载原生库失败」，无从下手。
+     *
+     * <p>只作为**失败后的解释**，不前置拦截：CRT 也可能是别的应用 app-local 部署的，
+     * 那种情况下 System32 里没有这几个文件但加载照样成功。
+     */
+    public static String missingVcRuntimeHint() {
+        String root = System.getenv("SystemRoot");
+        if (root == null || root.isEmpty()) return "";
+        for (String name : new String[]{"vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"}) {
+            if (!Files.isRegularFile(Path.of(root, "System32", name))) {
+                return "｜本机缺 MSVC 运行库（" + name + " 不在 System32）：装 Microsoft Visual C++ "
+                        + "2015-2022 Redistributable (x64) 后重进游戏。随包的 Streamline 与 dlssmc 本体都依赖它。";
+            }
+        }
+        return "";
+    }
+
+    /** classpath 资源的解压后大小；拿不到（不在 jar 里等）时返回 -1 */
+    private static long resourceSize(String resource) {
+        try {
+            var url = DLSSFGNative.class.getResource(resource);
+            if (url == null) return -1;
+            return url.openConnection().getContentLengthLong();
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     public static synchronized boolean load(Path streamlineBinDir, Path nativeCacheDir) {
         if (loaded) return true;
         try {
@@ -87,11 +143,19 @@ public final class DLSSFGNative {
             }
             Files.createDirectories(nativeCacheDir);
             Path dll = nativeCacheDir.resolve("dlssmc_fg.dll");
+            long expected = resourceSize(NATIVE_RESOURCE);
             try (var in = DLSSFGNative.class.getResourceAsStream(NATIVE_RESOURCE)) {
                 if (in == null) {
                     throw new IllegalStateException("classpath 缺少 " + NATIVE_RESOURCE + "，先跑 native/build_fg.sh");
                 }
-                Files.copy(in, dll, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Path tmp = nativeCacheDir.resolve("dlssmc_fg.dll.part");
+                Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                if (expected > 0 && Files.size(tmp) != expected) {
+                    Files.deleteIfExists(tmp);
+                    throw new IllegalStateException("dlssmc_fg.dll 解包不完整：期望 " + expected
+                            + " 字节，实得 " + Files.size(tmp) + " 字节");
+                }
+                moveIntoPlace(tmp, dll);
             }
 
             System.load(interposer.toAbsolutePath().toString());

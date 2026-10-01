@@ -370,6 +370,24 @@ public final class FGRuntime {
 
     // ------------------------------------------------------------------ 初始化
 
+    /**
+     * 原生库加载失败的诊断：把异常说清楚，并判断是不是缺 MSVC 运行库。
+     *
+     * <p>为什么值得单独判一下：`dlssmc_fg.dll` 和随包的全部 9 个 Streamline DLL 都静态导入
+     * `MSVCP140 / VCRUNTIME140 / VCRUNTIME140_1`（MSVC 2015-2022 运行库）。开发机上装了 MSVC
+     * 所以永远有；换一台机器就会以 `UnsatisfiedLinkError` 的形式炸掉，而那条消息在叠加层里
+     * 通常被屏幕边缘截断 —— 用户看到的只有「加载原生库失败」，完全无从下手。
+     *
+     * <p>缺不缺运行库由 {@link DLSSFGNative#missingVcRuntimeHint()} 判断（纯 JVM 可测）。
+     * 同样不替 LoadLibrary 下结论，只在**加载确实失败**之后才补那句话。
+     */
+    private static String describeLoadFailure(Throwable t) {
+        if (t == null) return "未知原因";
+        String msg = t.getMessage();
+        if (msg == null || msg.isEmpty()) msg = t.getClass().getSimpleName();
+        return t.getClass().getSimpleName() + ": " + msg;
+    }
+
     private boolean ensureNative(Path cacheDir) {
         if (initAttempted) return nativeReady;
         DLSSConfig.Backend chosen = DLSSConfig.activeBackend();
@@ -388,12 +406,20 @@ public final class FGRuntime {
                 Path slDir = DLSSFGNative.resolveStreamlineDir(
                         DLSSConfig.STREAMLINE_PATH.get(), cacheDir);
                 if (slDir == null) {
-                    status = "Streamline 运行时不可用：配置未指定且随包自带的那份解包失败";
+                    Throwable t = DLSSFGNative.getLastError();
+                    LOG.error("Streamline 运行时不可用（配置未指定 / 随包解包失败）", t);
+                    status = "Streamline 运行时不可用：配置里没给，随包解包也失败"
+                            + (t == null ? "" : "（" + describeLoadFailure(t) + "）");
                     return false;
                 }
                 String slPath = slDir.toAbsolutePath().toString();
                 if (!DLSSFGNative.load(slDir, cacheDir)) {
-                    status = "加载原生库失败: " + DLSSFGNative.getLastError();
+                    Throwable t = DLSSFGNative.getLastError();
+                    // 叠加层那行会被屏幕截断，完整堆栈必须落到游戏日志里
+                    LOG.error("加载 DLSS 原生库失败（Streamline 目录 {}）", slDir, t);
+                    String hint = DLSSFGNative.missingVcRuntimeHint();
+                    status = "加载原生库失败: " + describeLoadFailure(t)
+                            + (hint.isEmpty() ? "｜完整信息见 logs/latest.log" : hint);
                     return false;
                 }
                 int r = DLSSFGNative.nativeInit(slPath, logPath, DLSSConfig.DLSSG_UNLOCK_MFG.get());
@@ -409,7 +435,11 @@ public final class FGRuntime {
 
             vendorRoot = DLSSDXNative.extractVendor(cacheDir);
             if (!DLSSDXNative.load(vendorRoot, cacheDir)) {
-                status = "加载 D3D12 后端失败: " + DLSSDXNative.getLastError();
+                Throwable t = DLSSDXNative.getLastError();
+                LOG.error("加载 D3D12 原生库失败（厂商目录 {}）", vendorRoot, t);
+                String hint = DLSSFGNative.missingVcRuntimeHint();
+                status = "加载 D3D12 后端失败: " + describeLoadFailure(t)
+                        + (hint.isEmpty() ? "｜完整信息见 logs/latest.log" : hint);
                 return false;
             }
             int r = DLSSDXNative.nativeInit(vendorRoot.toString(), logPath);
