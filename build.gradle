@@ -90,6 +90,7 @@ processResources {
         include '*-LICENSE.txt'
         into 'dlssmc/native/streamline_runtime'
     }
+
     // 厂商二进制按许可要求随模组再分发，声明文件必须一起进包
     from('native/vendor/intel/bin') {
         include 'libxess_fg.dll'
