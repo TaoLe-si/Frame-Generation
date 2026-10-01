@@ -39,6 +39,9 @@ public final class DLSSNative {
 
             Path dll = extractNative(nativeCacheDir);
 
+            // 厂商 DLL 都静态导入 MSVCP140/VCRUNTIME140*；Java 17+ 的 JDK 自带这几个文件，
+            // 这里只记一下来源，供加载失败时给出准确解释（见 NativeRuntime）
+            NativeRuntime.probeVcRuntime();
             System.load(interposer.toAbsolutePath().toString());
             System.load(dll.toAbsolutePath().toString());
 

@@ -96,6 +96,8 @@ public final class DLSSDXNative {
                 }
                 Files.copy(in, dll, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
+            // D3D12 后端同样吃 MSVC 运行库（同样由 JDK 自带），只记录来源供诊断
+            NativeRuntime.probeVcRuntime();
             System.load(dll.toAbsolutePath().toString());
             loaded = true;
             lastError = null;

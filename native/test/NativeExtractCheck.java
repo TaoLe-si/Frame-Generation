@@ -92,17 +92,43 @@ public class NativeExtractCheck {
         System.out.println("  dlssmc_fg.dll = " + cache.resolve("mod").resolve("dlssmc_fg.dll")
                 + "（" + Files.size(cache.resolve("mod").resolve("dlssmc_fg.dll")) + " 字节）");
 
-        // 5) 缺运行库的提示：把 SystemRoot 指到空目录（由 run 脚本用环境变量注入），
-        //    提示必须出现且指明装什么；正常环境下必须为空串（不误报）
+        // 5) MSVC 运行库来源判定。
+        //    **不需要随包发** —— Java 17 起的 JDK 自带这三个文件；这里验的是「能认出来」。
+        var nativeRuntime = Class.forName("com.taolesi.dlssmc.nativebridge.NativeRuntime");
+        var hostSrc = nativeRuntime.getDeclaredMethod("hostVcRuntimeSource");
+        hostSrc.setAccessible(true);
+        var probeVc = nativeRuntime.getDeclaredMethod("probeVcRuntime");
+        probeVc.setAccessible(true);
+        var vcStatus = nativeRuntime.getDeclaredMethod("vcRuntimeStatus");
+        vcStatus.setAccessible(true);
+
+        String src = (String) hostSrc.invoke(null);
+        String status = (String) probeVc.invoke(null);
+        System.out.println("  宿主提供运行库的来源: " + (src.isEmpty() ? "(无)" : src)
+                + "，状态=" + status);
+        // 本机装了 VC++ redist 也有 JDK，两处都可能有；只要认出其一即可
+        String fakeRoot = System.getenv("DLSSMC_FAKE_SYSTEMROOT");
+        boolean fake = fakeRoot != null && !fakeRoot.isEmpty();
+        if (fake) {
+            // SystemRoot 被指到空目录 -> System32 那条路不通，仍必须靠 JDK 的 bin 认出来。
+            // 这一条就是「装了 Java 就一定不用再装运行库」的判据。
+            check(src.equals("JDK"),
+                    "SystemRoot 无效时仍应识别到 JDK 自带运行库 -> " + (src.isEmpty() ? "(没认出来)" : src));
+        } else {
+            check(!src.isEmpty(), "本机应能认到运行库来源（System32 或 JDK bin）");
+        }
+
+        // 6) 提示只在「宿主确实没有」时出现。随包方案已撤（JDK 自带），
+        //    所以只要 JDK 的 bin 在，就不该指引用户去装 redist。
         var hintMethod = nativeClass.getMethod("missingVcRuntimeHint");
         String hint = (String) hintMethod.invoke(null);
-        String fakeRoot = System.getenv("DLSSMC_FAKE_SYSTEMROOT");
-        boolean expectMissing = fakeRoot != null && !fakeRoot.isEmpty();
-        if (expectMissing) {
-            check(!hint.isEmpty() && hint.contains("Visual C++"),
-                    "SystemRoot 指向空目录时应提示装 VC++ 运行库 -> " + hint);
+        boolean hostHas = !((String) hostSrc.invoke(null)).isEmpty();
+        if (hostHas) {
+            check(hint.isEmpty(), "宿主已提供运行库时不应提示装 redist -> "
+                    + (hint.isEmpty() ? "(空)" : hint));
         } else {
-            check(hint.isEmpty(), "本机运行库齐全时不应误报 -> " + (hint.isEmpty() ? "(空)" : hint));
+            check(!hint.isEmpty() && hint.contains("Visual C++"),
+                    "宿主没有运行库时应提示装 redist -> " + hint);
         }
 
         System.out.println(fails == 0 ? "PASS: 解包 / 自愈 / 回落 / 加载 / 运行库提示 全部通过"
